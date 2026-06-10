@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "customer-app",
+    "name": "Pizza Virus",
     "slug": "customer-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "customerapp",
+    "icon": "./assets/images/logo.png",
+    "scheme": "pizzavirus",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -19,14 +19,15 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cloudpakasala.pizzavirus",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router",
       [
         "expo-splash-screen",
         {
@@ -38,11 +39,28 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-web-browser",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": [
+              "https://phonepe.mycloudrepo.io/public/repositories/phonepe-intentsdk-android"
+            ]
+          }
+        }
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d3a70d92-9f2b-476e-9b36-bfc4893b5343"
+      }
     }
   }
 }

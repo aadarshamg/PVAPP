@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "965905182215",
+    "project_id": "pizza-virus-ce6de",
+    "storage_bucket": "pizza-virus-ce6de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:965905182215:android:b88a71a8020aed01ae84a2",
+        "android_client_info": {
+          "package_name": "com.cloudpakasala.pizzavirus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhVO9sU8rfcTmX3Ll-8Dc2YH8-fM1qJqc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

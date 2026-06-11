@@ -187,7 +187,7 @@ export default function CartScreen({ navigation }) {
             const amountInPaise = Math.round(finalTotal * 100);
             const { data: pgData, error: fnError } = await supabase.functions.invoke('create-phonepe-order', {
                 body: {
-                    orderId:    insertedOrder.display_id,
+                    orderId:    `PV${insertedOrder.display_id}`,
                     amount:     amountInPaise,
                     customerId: user.id,
                     phone:      safePhone,

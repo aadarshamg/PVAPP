@@ -19,7 +19,8 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://nhzrnncervahcibjmnjo.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oenJubmNlcnZhaGNpYmptbmpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTA0NDIsImV4cCI6MjA4ODYyNjQ0Mn0.PZ-bRKVo3Q1PuRAdpCRGcuKptHksDlx7MpIs2pzT8S0"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oenJubmNlcnZhaGNpYmptbmpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwNTA0NDIsImV4cCI6MjA4ODYyNjQ0Mn0.PZ-bRKVo3Q1PuRAdpCRGcuKptHksDlx7MpIs2pzT8S0",
+        "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       }
     }
   },

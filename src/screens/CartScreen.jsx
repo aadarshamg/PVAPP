@@ -170,7 +170,7 @@ export default function CartScreen({ navigation }) {
                 payment_status:   'pending',
                 promo_code:       activeCoupon || null,
                 special_instructions: '',
-                status:           'placed',
+                status:           'pending_payment',
                 created_at:       new Date().toISOString(),
             };
 
@@ -204,8 +204,8 @@ export default function CartScreen({ navigation }) {
                 throw new Error('No checkout URL received from payment gateway');
             }
 
-            // 3. Open PhonePe checkout page in in-app browser
-            await WebBrowser.openBrowserAsync(redirectUrl);
+            // 3. Open PhonePe checkout page — browser auto-closes when PhonePe redirects to app scheme
+            await WebBrowser.openAuthSessionAsync(redirectUrl, 'pizzavirus://payment-callback');
 
             // 4. Browser closed — check if payment was confirmed by webhook
             const { data: orderStatus } = await supabase
@@ -483,6 +483,9 @@ export default function CartScreen({ navigation }) {
                                 Pay Online
                             </Text>
                         </TouchableOpacity>
+                        <View style={styles.orDivider}>
+                            <Text style={styles.orText}>OR</Text>
+                        </View>
                         <TouchableOpacity
                             style={[styles.paymentPill, paymentMethod === 'cash' && styles.paymentPillActive]}
                             onPress={() => setPaymentMethod('cash')}
@@ -628,5 +631,7 @@ const styles = StyleSheet.create({
     paymentPillText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
     paymentPillTextActive: { color: '#ffffff' },
     codFeeNote: { fontSize: 12, color: '#f97316', fontWeight: '600', marginTop: 8, textAlign: 'center' },
+    orDivider: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6 },
+    orText: { fontSize: 11, fontWeight: '700', color: '#94a3b8' },
     checkoutBtnPhonePe: { backgroundColor: '#22973a', shadowColor: '#22973a' },
 });

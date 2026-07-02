@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     Image, ScrollView, TextInput, StatusBar, Alert, ActivityIndicator
@@ -23,10 +23,37 @@ export default function CartScreen({ navigation }) {
     const [paymentMethod, setPaymentMethod] = useState('phonepe'); // 'cash' | 'phonepe'
     const COD_FEE = 5;
     const codFee = paymentMethod === 'cash' ? COD_FEE : 0;
-    const finalTotal = total + codFee;
     const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     const [activeAddress, setActiveAddress] = useState(null);
+    const [minOrderAmount, setMinOrderAmount] = useState(0);
+    const [rewardSlices, setRewardSlices] = useState(0);
+    const [rewardRedeemed, setRewardRedeemed] = useState(false);
+    const [rewardDiscount, setRewardDiscount] = useState(0);
+    const [availableAddons, setAvailableAddons] = useState([]);
+    const [selectedAddons, setSelectedAddons] = useState([]);
+    const addonTotal = selectedAddons.reduce((s, a) => s + Number(a.price), 0);
+    const finalTotal = total + codFee - rewardDiscount + addonTotal;
+
+    useEffect(() => {
+        supabase
+            .from('store_settings')
+            .select('value')
+            .eq('key', 'min_order_amount')
+            .maybeSingle()
+            .then(({ data }) => { if (data?.value) setMinOrderAmount(Number(data.value)); });
+    }, []);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        supabase.from('profiles').select('reward_slices').eq('id', user.id).single()
+            .then(({ data }) => { if (data) setRewardSlices(data.reward_slices || 0); });
+    }, [user?.id]);
+
+    useEffect(() => {
+        supabase.from('addons').select('*').eq('is_available', true).order('name', { ascending: true })
+            .then(({ data }) => { if (data) setAvailableAddons(data); });
+    }, []);
 
     useFocusEffect(
         useCallback(() => {
@@ -53,6 +80,18 @@ export default function CartScreen({ navigation }) {
 
     // Shared validation + address fetch used by both payment paths
     const prepareCheckout = async () => {
+        if (user?.id) {
+            const { data: profileCheck } = await supabase
+                .from('profiles')
+                .select('is_blocked, reward_slices')
+                .eq('id', user.id)
+                .single();
+            if (profileCheck?.is_blocked) {
+                Alert.alert('Account Suspended', 'Your account has been suspended due to suspicious activity. Please contact support.');
+                return null;
+            }
+            setRewardSlices(profileCheck?.reward_slices || 0);
+        }
         if (!user || !user.id) {
             Alert.alert('Sign In Required', 'You must be logged in to place an order.');
             return null;
@@ -79,21 +118,68 @@ export default function CartScreen({ navigation }) {
             );
             return null;
         }
+        // Always fetch fresh at checkout so RLS failures on mount don't silently disable the check
+        const { data: minSetting } = await supabase
+            .from('store_settings')
+            .select('value')
+            .eq('key', 'min_order_amount')
+            .maybeSingle();
+        const effectiveMin = minSetting?.value ? Number(minSetting.value) : minOrderAmount;
+        if (effectiveMin > 0 && subtotal < effectiveMin) {
+            const needed = effectiveMin - subtotal;
+            Alert.alert(
+                'Minimum Order Required',
+                `Minimum order amount is ₹${effectiveMin}. Add ₹${needed} more to place your order.`
+            );
+            return null;
+        }
         // Use receiver details if user is ordering for someone outside the zone
         const receiverData = await AsyncStorage.getItem('@pizza_delivery_receiver');
         const receiver = receiverData ? JSON.parse(receiverData) : null;
         const safeName    = (receiver?.name  || deliveryAddress.name  || '').trim().slice(0, 100) || 'Customer';
         const safePhone   = (receiver?.phone || deliveryAddress.phone || '').replace(/[^\d+\-() ]/g, '').slice(0, 20);
         const safeAddress = (deliveryAddress.address || '').trim().slice(0, 300);
-        const sanitizedItems = cartItems.map(item => ({
-            product_id:   item.product.id,
-            product_name: item.product.name.trim().slice(0, 150),
-            size:         item.size.label,
-            crust_name:   item.crust?.name || null,
-            quantity:     Math.max(1, Math.min(item.qty, 50)),
-            price:        Math.round(item.unitPrice * 100) / 100,
-        }));
+        const sanitizedItems = [
+            ...cartItems.map(item => ({
+                product_id:   item.product.id,
+                product_name: item.product.name.trim().slice(0, 150),
+                size:         item.size.label,
+                crust_name:   item.crust?.name || null,
+                quantity:     Math.max(1, Math.min(item.qty, 50)),
+                price:        Math.round(item.unitPrice * 100) / 100,
+            })),
+            ...selectedAddons.map(addon => ({
+                product_id:   null,
+                product_name: addon.name,
+                size:         'Add-on',
+                crust_name:   null,
+                quantity:     1,
+                price:        Math.round(Number(addon.price) * 100) / 100,
+            })),
+        ];
         return { safeName, safePhone, safeAddress, sanitizedItems, deliveryAddress };
+    };
+
+    const toggleAddon = (addon) => {
+        setSelectedAddons(prev => {
+            const exists = prev.find(a => a.id === addon.id);
+            return exists ? prev.filter(a => a.id !== addon.id) : [...prev, addon];
+        });
+    };
+
+    const cheapestItemPrice = () => {
+        if (cartItems.length === 0) return 0;
+        return Math.min(...cartItems.map(i => i.unitPrice));
+    };
+
+    const handleRedeemReward = () => {
+        setRewardDiscount(cheapestItemPrice());
+        setRewardRedeemed(true);
+    };
+
+    const handleCancelReward = () => {
+        setRewardDiscount(0);
+        setRewardRedeemed(false);
     };
 
     const handleCheckout = async () => {
@@ -118,7 +204,7 @@ export default function CartScreen({ navigation }) {
                 subtotal:         Math.round(subtotal    * 100) / 100,
                 gst:              Math.round(gst         * 100) / 100,
                 delivery_charge:  COD_FEE,
-                discount:         Math.round(discount    * 100) / 100,
+                discount:         Math.round((discount + rewardDiscount) * 100) / 100,
                 total:            Math.round(finalTotal  * 100) / 100,
                 payment_method:   'cash',
                 payment_status:   'pending',
@@ -126,6 +212,7 @@ export default function CartScreen({ navigation }) {
                 special_instructions: '',
                 status:           'placed',
                 created_at:       new Date().toISOString(),
+                reward_redeemed:  rewardRedeemed,
             };
 
             const { data: insertedOrder, error: orderError } = await supabase
@@ -136,6 +223,12 @@ export default function CartScreen({ navigation }) {
                 sanitizedItems.map(item => ({ ...item, order_id: insertedOrder.id }))
             );
 
+            if (rewardRedeemed) {
+                await supabase.from('profiles')
+                    .update({ reward_slices: Math.max(0, rewardSlices - 6) })
+                    .eq('id', user.id);
+            }
+
             await AsyncStorage.removeItem('@pizza_delivery_receiver');
             clearCart();
             navigation.replace('OrderSuccess', {
@@ -143,6 +236,7 @@ export default function CartScreen({ navigation }) {
                 total:        total,
                 address:      safeAddress,
                 addressTitle: deliveryAddress.title || 'Home',
+                sliceEarned:  finalTotal >= 300,
             });
         } catch {
             Alert.alert('Error', 'Something went wrong. Please try again.');
@@ -164,14 +258,15 @@ export default function CartScreen({ navigation }) {
                 subtotal:         Math.round(subtotal   * 100) / 100,
                 gst:              Math.round(gst        * 100) / 100,
                 delivery_charge:  0,
-                discount:         Math.round(discount   * 100) / 100,
+                discount:         Math.round((discount + rewardDiscount) * 100) / 100,
                 total:            Math.round(finalTotal * 100) / 100,
                 payment_method:   'phonepe',
                 payment_status:   'pending',
                 promo_code:       activeCoupon || null,
                 special_instructions: '',
-                status:           'pending_payment',
+                status:           'placed',
                 created_at:       new Date().toISOString(),
+                reward_redeemed:  rewardRedeemed,
             };
 
             const { data: order, error: orderError } = await supabase
@@ -215,6 +310,11 @@ export default function CartScreen({ navigation }) {
                 .single();
 
             if (orderStatus?.payment_status === 'paid') {
+                if (rewardRedeemed) {
+                    await supabase.from('profiles')
+                        .update({ reward_slices: Math.max(0, rewardSlices - 6) })
+                        .eq('id', user.id);
+                }
                 await AsyncStorage.removeItem('@pizza_delivery_receiver');
                 clearCart();
                 navigation.replace('OrderSuccess', {
@@ -222,17 +322,23 @@ export default function CartScreen({ navigation }) {
                     total:        total,
                     address:      safeAddress,
                     addressTitle: deliveryAddress.title || 'Home',
+                    sliceEarned:  finalTotal >= 300,
                 });
             } else {
-                await supabase.from('order_items').delete().eq('order_id', insertedOrder.id);
-                await supabase.from('orders').delete().eq('id', insertedOrder.id);
+                // Mark order as cancelled (customers cannot delete — RLS blocks it)
+                await supabase.from('orders')
+                    .update({ status: 'cancelled', payment_status: 'failed' })
+                    .eq('id', insertedOrder.id)
+                    .eq('customer_id', user.id);
                 Alert.alert('Payment Incomplete', 'Payment was not completed. Please try again.', [{ text: 'OK' }]);
             }
         } catch (error) {
-            // Clean up draft order on unexpected error
+            // Mark draft order as cancelled on unexpected error
             if (insertedOrder?.id) {
-                await supabase.from('order_items').delete().eq('order_id', insertedOrder.id);
-                await supabase.from('orders').delete().eq('id', insertedOrder.id);
+                await supabase.from('orders')
+                    .update({ status: 'cancelled', payment_status: 'failed' })
+                    .eq('id', insertedOrder.id)
+                    .eq('customer_id', user.id);
             }
             Alert.alert('Payment Error', error?.message || 'Something went wrong. Please try again.');
         } finally {
@@ -370,6 +476,74 @@ export default function CartScreen({ navigation }) {
                     </View>
                 ))}
 
+                {/* Pizza Rewards */}
+                {user?.id && (
+                    <View style={styles.rewardCard}>
+                        <View style={styles.rewardHeader}>
+                            <Text style={styles.rewardTitle}>🍕 Pizza Rewards</Text>
+                            <Text style={styles.rewardCount}>{Math.min(rewardSlices, 6)}/6 slices</Text>
+                        </View>
+                        <View style={styles.sliceRow}>
+                            {[0, 1, 2, 3, 4, 5].map(i => (
+                                <Text key={i} style={styles.sliceIcon}>
+                                    {i < rewardSlices ? '🍕' : '⬜'}
+                                </Text>
+                            ))}
+                        </View>
+                        {rewardSlices >= 6 && !rewardRedeemed && (
+                            <>
+                                <Text style={styles.rewardReady}>🎉 You have a free pizza waiting!</Text>
+                                <TouchableOpacity style={styles.redeemBtn} onPress={handleRedeemReward}>
+                                    <Text style={styles.redeemBtnText}>REDEEM FREE PIZZA</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                        {rewardRedeemed && (
+                            <View style={styles.redeemedRow}>
+                                <Text style={styles.redeemedText}>✓ Free pizza applied  -₹{rewardDiscount}</Text>
+                                <TouchableOpacity onPress={handleCancelReward}>
+                                    <Text style={styles.cancelRewardText}>CANCEL</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                        {rewardSlices < 6 && !rewardRedeemed && (
+                            <Text style={styles.rewardHint}>
+                                {6 - rewardSlices} more {6 - rewardSlices === 1 ? 'slice' : 'slices'} to earn a free pizza!
+                            </Text>
+                        )}
+                    </View>
+                )}
+
+                {/* Sides & Drinks */}
+                {availableAddons.length > 0 && (
+                    <View style={styles.addonSection}>
+                        <Text style={styles.addonSectionTitle}>🥤 Sides & Drinks</Text>
+                        <Text style={styles.addonSectionSub}>Add something on the side</Text>
+                        {availableAddons.map(addon => {
+                            const selected = !!selectedAddons.find(a => a.id === addon.id);
+                            return (
+                                <TouchableOpacity
+                                    key={addon.id}
+                                    style={[styles.addonRow, selected && styles.addonRowActive]}
+                                    onPress={() => toggleAddon(addon)}
+                                    activeOpacity={0.8}
+                                >
+                                    <View style={styles.addonDot(addon.is_veg)} />
+                                    <Text style={[styles.addonName, selected && styles.addonNameActive]} numberOfLines={1}>
+                                        {addon.name}
+                                    </Text>
+                                    <Text style={[styles.addonPrice, selected && styles.addonPriceActive]}>
+                                        +₹{addon.price}
+                                    </Text>
+                                    <View style={[styles.addonCheck, selected && styles.addonCheckActive]}>
+                                        {selected && <Text style={styles.addonCheckMark}>✓</Text>}
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+                )}
+
                 {/* Apply Coupon */}
                 <View style={styles.couponSection}>
                     <View style={styles.couponHeader}>
@@ -430,6 +604,18 @@ export default function CartScreen({ navigation }) {
                             <Text style={styles.billValue}>₹{codFee}</Text>
                         </View>
                     )}
+                    {addonTotal > 0 && (
+                        <View style={styles.billRow}>
+                            <Text style={styles.billLabel}>Sides & Drinks</Text>
+                            <Text style={styles.billValue}>₹{addonTotal}</Text>
+                        </View>
+                    )}
+                    {rewardDiscount > 0 && (
+                        <View style={styles.billRow}>
+                            <Text style={[styles.billLabel, { color: '#22973a' }]}>Reward Discount</Text>
+                            <Text style={[styles.billValue, { color: '#22973a' }]}>-₹{rewardDiscount}</Text>
+                        </View>
+                    )}
 
                     <View style={styles.divider} />
 
@@ -438,6 +624,23 @@ export default function CartScreen({ navigation }) {
                         <Text style={styles.totalValue}>₹{finalTotal}</Text>
                     </View>
                 </View>
+
+                {/* Minimum Order Banner */}
+                {minOrderAmount > 0 && (
+                    <View style={[
+                        styles.minOrderBanner,
+                        subtotal >= minOrderAmount ? styles.minOrderBannerMet : styles.minOrderBannerWarn
+                    ]}>
+                        <Text style={[
+                            styles.minOrderBannerText,
+                            subtotal >= minOrderAmount ? { color: '#15803d' } : { color: '#92400e' }
+                        ]}>
+                            {subtotal >= minOrderAmount
+                                ? `✓ Minimum order of ₹${minOrderAmount} met`
+                                : `⚠ Add ₹${minOrderAmount - subtotal} more · Min. order ₹${minOrderAmount}`}
+                        </Text>
+                    </View>
+                )}
 
                 {/* Delivery Address Selector */}
                 <View style={styles.addressSection}>
@@ -560,6 +763,26 @@ const styles = StyleSheet.create({
     },
     qtyText: { fontSize: 14, fontWeight: '900', color: '#0f172a', paddingHorizontal: 12 },
     cartItemPrice: { fontSize: 18, fontWeight: '900', color: '#00b050' },
+    // Reward Card
+    rewardCard: {
+        backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+        borderWidth: 1.5, borderColor: '#dcfce7',
+    },
+    rewardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+    rewardTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a' },
+    rewardCount: { fontSize: 13, fontWeight: '800', color: '#22973a' },
+    sliceRow: { flexDirection: 'row', gap: 6, marginBottom: 12 },
+    sliceIcon: { fontSize: 24 },
+    rewardReady: { fontSize: 13, fontWeight: '700', color: '#22973a', marginBottom: 10 },
+    redeemBtn: {
+        backgroundColor: '#22973a', borderRadius: 12, paddingVertical: 12, alignItems: 'center',
+    },
+    redeemBtnText: { color: '#fff', fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
+    redeemedRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    redeemedText: { fontSize: 13, fontWeight: '700', color: '#22973a' },
+    cancelRewardText: { fontSize: 12, fontWeight: '800', color: '#ef4444' },
+    rewardHint: { fontSize: 12, color: '#64748b', fontWeight: '600' },
     // Coupon Section
     couponSection: {
         backgroundColor: '#ffffff', borderRadius: 20, padding: 20, marginBottom: 16,
@@ -634,4 +857,37 @@ const styles = StyleSheet.create({
     orDivider: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 6 },
     orText: { fontSize: 11, fontWeight: '700', color: '#94a3b8' },
     checkoutBtnPhonePe: { backgroundColor: '#22973a', shadowColor: '#22973a' },
+    minOrderBanner: { borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginTop: 12, alignItems: 'center' },
+    minOrderBannerWarn: { backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fcd34d' },
+    minOrderBannerMet: { backgroundColor: '#dcfce7', borderWidth: 1, borderColor: '#86efac' },
+    minOrderBannerText: { fontSize: 13, fontWeight: '800' },
+    // Sides & Drinks (Addons)
+    addonSection: {
+        backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 16,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    },
+    addonSectionTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', marginBottom: 4 },
+    addonSectionSub: { fontSize: 12, color: '#64748b', fontWeight: '600', marginBottom: 14 },
+    addonRow: {
+        flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 14,
+        borderRadius: 14, backgroundColor: '#f8fafc', marginBottom: 8,
+        borderWidth: 1.5, borderColor: '#e2e8f0',
+    },
+    addonRowActive: { backgroundColor: '#f0fdf4', borderColor: '#22973a' },
+    addonDot: (isVeg) => ({
+        width: 12, height: 12, borderRadius: 6,
+        backgroundColor: isVeg ? '#22973a' : '#ef4444',
+        borderWidth: 1.5, borderColor: isVeg ? '#166534' : '#b91c1c',
+        marginRight: 10,
+    }),
+    addonName: { flex: 1, fontSize: 14, fontWeight: '700', color: '#0f172a' },
+    addonNameActive: { color: '#166534' },
+    addonPrice: { fontSize: 14, fontWeight: '800', color: '#64748b', marginRight: 12 },
+    addonPriceActive: { color: '#22973a' },
+    addonCheck: {
+        width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#cbd5e1',
+        justifyContent: 'center', alignItems: 'center',
+    },
+    addonCheckActive: { backgroundColor: '#22973a', borderColor: '#22973a' },
+    addonCheckMark: { color: '#fff', fontSize: 12, fontWeight: '900' },
 });

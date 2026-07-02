@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import HomeScreen from '../screens/HomeScreen';
@@ -45,12 +46,16 @@ function TabIcon({ label, focused }) {
 }
 
 function HomeTabs() {
+    const insets = useSafeAreaInsets();
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({
                 headerShown: false,
                 tabBarShowLabel: false,
-                tabBarStyle: styles.tabBar,
+                tabBarStyle: [styles.tabBar, {
+                    height: 70 + insets.bottom,
+                    paddingBottom: 8 + insets.bottom,
+                }],
                 tabBarIcon: ({ focused }) => <TabIcon label={route.name.replace('Tab', '')} focused={focused} />,
             })}
         >

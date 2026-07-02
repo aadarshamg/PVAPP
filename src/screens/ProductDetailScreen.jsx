@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    Image, SafeAreaView, Alert
+    Image, Alert
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useCart } from '../contexts/CartContext';
 import { ArrowLeft, Minus, Plus } from 'lucide-react-native';
@@ -10,6 +12,7 @@ import { ArrowLeft, Minus, Plus } from 'lucide-react-native';
 export default function ProductDetailScreen({ route, navigation }) {
     const { product } = route.params;
     const { addToCart } = useCart();
+    const insets = useSafeAreaInsets();
 
     // Default size is first available, we'll try medium first.
     const [selectedSize, setSelectedSize] = useState('medium');
@@ -24,16 +27,27 @@ export default function ProductDetailScreen({ route, navigation }) {
     }, []);
 
     const fetchCustomizations = async () => {
-        const [crustRes, toppingRes] = await Promise.all([
-            supabase.from('crusts').select('*').eq('product_id', product.id),
-            supabase.from('toppings').select('*').eq('is_available', true),
-        ]);
-        if (crustRes.data) {
-            setCrusts(crustRes.data);
-            if (crustRes.data.length > 0) setSelectedCrust(crustRes.data[0]);
+        const { data: crustRes } = await supabase
+            .from('crusts').select('*').eq('product_id', product.id);
+        if (crustRes) {
+            setCrusts(crustRes);
+            if (crustRes.length > 0) setSelectedCrust(crustRes[0]);
         }
-        if (toppingRes.data) setToppings(toppingRes.data);
     };
+
+    // Re-fetch addons whenever selected size changes
+    useEffect(() => {
+        if (!selectedSize) return;
+        supabase
+            .from('product_size_addons')
+            .select('topping:toppings(*)')
+            .eq('product_id', product.id)
+            .eq('size', selectedSize)
+            .then(({ data }) => {
+                setToppings((data || []).map(r => r.topping).filter(Boolean));
+                setSelectedToppings([]);
+            });
+    }, [selectedSize]);
 
     // Filter available sizes safely based on null base prices
     const sizes = [
@@ -159,25 +173,30 @@ export default function ProductDetailScreen({ route, navigation }) {
                         </>
                     )}
 
-                    {/* Toppings */}
+                    {/* Extra Toppings */}
                     {toppings.length > 0 && (
                         <>
                             <Text style={styles.optionTitle}>Extra Toppings</Text>
-                            <View style={styles.toppingGrid}>
+                            <View style={styles.toppingList}>
                                 {toppings.map(topping => {
                                     const isActive = !!selectedToppings.find(t => t.id === topping.id);
                                     return (
                                         <TouchableOpacity
                                             key={topping.id}
-                                            style={[styles.chip, isActive && styles.chipActive]}
+                                            style={[styles.toppingRow, isActive && styles.toppingRowActive]}
                                             onPress={() => toggleTopping(topping)}
+                                            activeOpacity={0.7}
                                         >
-                                            <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                                            <View style={[styles.toppingDot, { backgroundColor: topping.is_veg ? '#48d23c' : '#EF4444' }]} />
+                                            <Text style={[styles.toppingName, isActive && styles.toppingNameActive]} numberOfLines={1}>
                                                 {topping.name}
                                             </Text>
-                                            <Text style={[styles.chipPrice, isActive && styles.chipTextActive]}>
+                                            <Text style={[styles.toppingPrice, isActive && styles.toppingPriceActive]}>
                                                 +₹{topping.price}
                                             </Text>
+                                            <View style={[styles.toppingCheck, isActive && styles.toppingCheckActive]}>
+                                                {isActive && <Text style={styles.checkMark}>✓</Text>}
+                                            </View>
                                         </TouchableOpacity>
                                     );
                                 })}
@@ -190,7 +209,7 @@ export default function ProductDetailScreen({ route, navigation }) {
             </ScrollView>
 
             {/* Bottom Bar */}
-            <View style={styles.bottomBar}>
+            <View style={[styles.bottomBar, { paddingBottom: 16 + insets.bottom }]}>
                 <View style={styles.qtyContainer}>
                     <TouchableOpacity style={styles.qtyBtn} onPress={() => quantity > 1 && setQuantity(q => q - 1)}>
                         <Minus size={20} color="#94a3b8" />
@@ -246,7 +265,6 @@ const styles = StyleSheet.create({
     sizeLabelActive: { color: '#ffffff' },
 
     crustList: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-    toppingGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
 
     chip: {
         paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14,
@@ -259,13 +277,33 @@ const styles = StyleSheet.create({
     },
     chipText: { fontSize: 14, color: '#334155', fontWeight: '700' },
     chipTextActive: { color: '#22973a' },
-    chipPrice: { fontSize: 12, color: '#94a3b8', marginTop: 4, fontWeight: '600' },
+
+    toppingList: { gap: 10 },
+    toppingRow: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#f8fafc', borderRadius: 16,
+        paddingHorizontal: 16, paddingVertical: 16,
+        borderWidth: 1.5, borderColor: 'transparent',
+    },
+    toppingRowActive: { backgroundColor: '#f0fdf4', borderColor: '#48d23c' },
+    toppingDot: { width: 10, height: 10, borderRadius: 5, marginRight: 12 },
+    toppingName: { flex: 1, fontSize: 15, fontWeight: '700', color: '#334155' },
+    toppingNameActive: { color: '#166534' },
+    toppingPrice: { fontSize: 14, fontWeight: '800', color: '#94a3b8', marginRight: 12 },
+    toppingPriceActive: { color: '#22973a' },
+    toppingCheck: {
+        width: 26, height: 26, borderRadius: 13,
+        borderWidth: 2, borderColor: '#cbd5e1',
+        justifyContent: 'center', alignItems: 'center',
+    },
+    toppingCheckActive: { backgroundColor: '#48d23c', borderColor: '#48d23c' },
+    checkMark: { color: '#fff', fontSize: 13, fontWeight: '900' },
 
     // Bottom Bar
     bottomBar: {
         position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: '#ffffff',
-        paddingHorizontal: 20, paddingTop: 16, paddingBottom: 30,
+        paddingHorizontal: 20, paddingTop: 16,
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.05, shadowRadius: 15, elevation: 20,
     },

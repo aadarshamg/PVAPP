@@ -31,43 +31,54 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
 
     const checkZone = async () => {
         try {
+            // Check cached result first (valid for 1 hour) — skips GPS entirely on repeat opens
+            const cached = await AsyncStorage.getItem('@zone_check_cache');
+            if (cached) {
+                const { result, ts } = JSON.parse(cached);
+                if (Date.now() - ts < 60 * 60 * 1000) {
+                    if (result === 'inside') { proceedToApp(); return; }
+                    if (result === 'outside') { setStep(STEP_OUTSIDE); return; }
+                }
+            }
+
             // Request GPS permission
             const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                // GPS denied — allow app access without check
-                proceedToApp();
-                return;
-            }
+            if (status !== 'granted') { proceedToApp(); return; }
 
-            // Get position
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            // Fetch zone from Supabase + GPS position in parallel
+            const GPS_TIMEOUT = 5000;
+            const gpsPromise = (async () => {
+                // Try last-known position first (instant, no network needed)
+                const last = await Location.getLastKnownPositionAsync();
+                if (last) return last;
+                // Fall back to fresh fix with a tight timeout
+                return Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+            })();
+
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('gps_timeout')), GPS_TIMEOUT)
+            );
+
+            const [pos, { data }] = await Promise.all([
+                Promise.race([gpsPromise, timeoutPromise]),
+                supabase.from('store_settings').select('value').eq('key', 'delivery_zone').single(),
+            ]);
+
+            if (!data?.value) { proceedToApp(); return; }
+
+            const zone = JSON.parse(data.value).map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
             const coord = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+            const inside = zone.length < 3 || isPointInPolygon(coord, zone);
 
-            // Fetch delivery zone from Supabase
-            const { data } = await supabase
-                .from('store_settings')
-                .select('value')
-                .eq('key', 'delivery_zone')
-                .single();
+            // Cache the result
+            await AsyncStorage.setItem('@zone_check_cache', JSON.stringify({
+                result: inside ? 'inside' : 'outside',
+                ts: Date.now(),
+            }));
 
-            if (!data?.value) {
-                // No zone configured — allow all
-                proceedToApp();
-                return;
-            }
-
-            const coords = JSON.parse(data.value);
-            const zone = coords.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
-
-            if (zone.length < 3 || isPointInPolygon(coord, zone)) {
-                // Inside zone — proceed normally
-                proceedToApp();
-            } else {
-                // Outside zone — show gate
-                setStep(STEP_OUTSIDE);
-            }
+            if (inside) { proceedToApp(); } else { setStep(STEP_OUTSIDE); }
         } catch {
-            // Any error (GPS timeout, offline, etc.) — allow access
+            // GPS timeout, offline, any error — allow access
             proceedToApp();
         }
     };

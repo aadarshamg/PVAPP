@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    ScrollView, StatusBar, ActivityIndicator
+    ScrollView, StatusBar, ActivityIndicator, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, PackageMinus, CheckCircle, ChefHat, Truck } from 'lucide-react-native';
@@ -21,7 +21,7 @@ const STATUS_LABELS = {
     ready:              'Ready',
     'out-for-delivery': 'On the Way',
     delivered:          'Delivered',
-    cancelled:          'Cancelled',
+    cancelled:          'Order Rejected',
 };
 
 const STATUS_COLORS = {
@@ -57,7 +57,15 @@ export default function OrderHistoryScreen({ navigation }) {
         const sub = supabase
             .channel('customer-orders-v2')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
-                setOrders(prev => prev.map(o => o.id === payload.new.id ? { ...o, ...payload.new } : o));
+                const updated = payload.new;
+                setOrders(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o));
+                if (updated.status === 'cancelled') {
+                    Alert.alert(
+                        '❌ Order Rejected',
+                        'Sorry, your order has been rejected by the restaurant. Please place a new order or contact support.',
+                        [{ text: 'OK' }]
+                    );
+                }
             })
             .subscribe();
 
@@ -239,7 +247,7 @@ function PastOrderCard({ order, navigation }) {
 
             {/* Address */}
             <View style={styles.addrBox}>
-                <Text style={styles.addrLabel}>Delivered to:</Text>
+                <Text style={styles.addrLabel}>{order.status === 'cancelled' ? 'Order address:' : 'Delivered to:'}</Text>
                 <Text style={styles.addrText} numberOfLines={2}>{order.delivery_address || '—'}</Text>
             </View>
 

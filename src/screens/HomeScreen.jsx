@@ -173,26 +173,42 @@ export default function HomeScreen({ navigation }) {
         return () => supabase.removeChannel(kitchenSub);
     }, []);
 
+    const fetchActiveOrder = useCallback(async () => {
+        if (!user) return;
+        const { data } = await supabase.from('orders').select('*')
+            .eq('customer_id', user.id)
+            .not('status', 'in', '("delivered","cancelled")')
+            .or('payment_method.eq.cash,payment_status.eq.paid')
+            .order('created_at', { ascending: false }).limit(1);
+        setActiveOrder(data && data.length > 0 ? data[0] : null);
+    }, [user]);
+
+    // Re-fetch whenever screen comes into focus so cancelled orders clear immediately
+    useFocusEffect(useCallback(() => {
+        fetchActiveOrder();
+    }, [fetchActiveOrder]));
+
     useEffect(() => {
         if (!user) return;
-        const fetchActiveOrder = async () => {
-            const { data } = await supabase.from('orders').select('*')
-                .eq('customer_id', user.id)
-                .not('status', 'in', '("delivered","cancelled")')
-                .order('created_at', { ascending: false }).limit(1);
-            setActiveOrder(data && data.length > 0 ? data[0] : null);
-        };
         fetchActiveOrder();
         const sub = supabase.channel('home-active-order')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
-                if (payload.new.customer_id === user.id) setActiveOrder(payload.new);
+                const o = payload.new;
+                if (o.customer_id !== user.id) return;
+                // Only show cash orders immediately; PhonePe orders wait for payment
+                if (o.payment_method !== 'cash') return;
+                setActiveOrder(o);
             })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
-                if (payload.new.customer_id !== user.id) return;
-                if (['delivered', 'cancelled'].includes(payload.new.status)) {
-                    setActiveOrder(prev => prev?.id === payload.new.id ? null : prev);
+                const o = payload.new;
+                if (o.customer_id !== user.id) return;
+                if (['delivered', 'cancelled'].includes(o.status)) {
+                    setActiveOrder(prev => prev?.id === o.id ? null : prev);
+                } else if (o.payment_method !== 'cash' && o.payment_status === 'paid') {
+                    // PhonePe payment confirmed — now show the tracker
+                    setActiveOrder(o);
                 } else {
-                    setActiveOrder(prev => prev?.id === payload.new.id ? { ...prev, ...payload.new } : prev);
+                    setActiveOrder(prev => prev?.id === o.id ? { ...prev, ...o } : prev);
                 }
             })
             .subscribe();

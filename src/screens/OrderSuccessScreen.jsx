@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Home, Package } from 'lucide-react-native';
 
 export default function OrderSuccessScreen({ route, navigation }) {
-    const { orderId, total, address, addressTitle } = route.params || {};
+    const { orderId, total, address, addressTitle, sliceEarned } = route.params || {};
 
     const now = new Date();
     const eta = new Date(now.getTime() + 30 * 60000);
@@ -78,6 +78,17 @@ export default function OrderSuccessScreen({ route, navigation }) {
                     <Text style={styles.thankYouTitle}>🎉 Thank you for ordering from Pizza Virus!</Text>
                     <Text style={styles.thankYouSub}>We're spreading deliciousness, one pizza at a time!</Text>
                 </View>
+
+                {/* Slice Earned Banner */}
+                {sliceEarned && (
+                    <View style={styles.sliceEarnedBox}>
+                        <Text style={styles.sliceEarnedTitle}>🍕 Slice Incoming!</Text>
+                        <Text style={styles.sliceEarnedSub}>
+                            This order earns you +1 pizza slice when delivered.{'\n'}
+                            Collect 6 to get a free pizza!
+                        </Text>
+                    </View>
+                )}
 
             </ScrollView>
         </SafeAreaView>
@@ -155,4 +166,12 @@ const styles = StyleSheet.create({
     },
     thankYouTitle: { fontSize: 14, fontWeight: '900', color: '#0f172a', marginBottom: 4 },
     thankYouSub: { fontSize: 12, color: '#475569', lineHeight: 18 },
+
+    sliceEarnedBox: {
+        width: '100%', backgroundColor: '#f0fdf4',
+        borderWidth: 2, borderColor: '#86efac', borderRadius: 16,
+        padding: 16, marginTop: 12, alignItems: 'center',
+    },
+    sliceEarnedTitle: { fontSize: 16, fontWeight: '900', color: '#15803d', marginBottom: 4 },
+    sliceEarnedSub: { fontSize: 12, color: '#166534', lineHeight: 18, textAlign: 'center' },
 });

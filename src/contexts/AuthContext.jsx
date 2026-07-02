@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
-import * as Linking from 'expo-linking';
-import { getAuth } from '@react-native-firebase/auth';
+import { makeRedirectUri } from 'expo-auth-session';
 
 // Conditionally import WebBrowser only on native
 let WebBrowser = null;
@@ -83,38 +82,6 @@ export const AuthProvider = ({ children }) => {
         return data;
     };
 
-    // Phone OTP - Send via Firebase (free)
-    const sendOtp = async (phone) => {
-        const firebaseAuth = getAuth();
-        // Disable Play Integrity API check on emulator so test numbers work
-        if (__DEV__) {
-            firebaseAuth.settings.appVerificationDisabledForTesting = true;
-        }
-        const confirmation = await firebaseAuth.signInWithPhoneNumber(phone);
-        return confirmation;
-    };
-
-    // Phone OTP - Verify via Firebase → bridge to Supabase session
-    const verifyOtp = async (confirmation, otpCode) => {
-        // Step 1: Confirm OTP with Firebase
-        const result = await confirmation.confirm(otpCode);
-        const idToken = await result.user.getIdToken();
-
-        // Step 2: Exchange Firebase ID token for a Supabase session via Edge Function
-        const { data, error } = await supabase.functions.invoke('firebase-auth-bridge', {
-            body: { idToken },
-        });
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-
-        // Step 3: Activate the Supabase session using the returned token_hash
-        const { error: otpError } = await supabase.auth.verifyOtp({
-            token_hash: data.token_hash,
-            type: 'email',
-        });
-        if (otpError) throw otpError;
-    };
-
     // Google Sign In
     const signInWithGoogle = async () => {
         if (Platform.OS === 'web') {
@@ -130,7 +97,7 @@ export const AuthProvider = ({ children }) => {
             // onAuthStateChange will pick up the session automatically
         } else {
             // On mobile: open an in-app browser
-            const redirectUrl = Linking.createURL('auth/callback');
+            const redirectUrl = makeRedirectUri({ scheme: 'pizzavirus', path: 'auth/callback' });
 
             const { data, error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
@@ -204,7 +171,6 @@ export const AuthProvider = ({ children }) => {
         <AuthContext.Provider value={{
             user, session,
             signInWithEmail, signUp,
-            sendOtp, verifyOtp,
             signInWithGoogle, signInWithApple,
             signOut, loading
         }}>

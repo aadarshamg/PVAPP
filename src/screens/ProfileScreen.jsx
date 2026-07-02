@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image, Linking
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../lib/supabase';
 
 const LOGO = require('../../assets/images/logo.png');
 import { useAuth } from '../contexts/AuthContext';
@@ -22,6 +23,13 @@ import { Package, MapPin, Tag, HelpCircle, Info, ChevronRight, LogOut } from 'lu
 
 export default function ProfileScreen({ navigation }) {
     const { user, signOut } = useAuth();
+    const [rewardSlices, setRewardSlices] = useState(null);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        supabase.from('profiles').select('reward_slices').eq('id', user.id).single()
+            .then(({ data }) => setRewardSlices(data?.reward_slices ?? 0));
+    }, [user?.id]);
 
     const menuItems = [
         { label: 'My Orders',        icon: Package,     screen: 'OrderHistory' },
@@ -55,6 +63,26 @@ export default function ProfileScreen({ navigation }) {
                         <Text style={styles.userEmail}>{formatPhone(user?.email)}</Text>
                     </View>
                 </View>
+
+                {/* Reward Widget */}
+                {rewardSlices !== null && (
+                    <View style={styles.rewardWidget}>
+                        <View style={styles.rewardWidgetRow}>
+                            <Text style={styles.rewardWidgetTitle}>🍕 Pizza Rewards</Text>
+                            <Text style={styles.rewardWidgetBadge}>{Math.min(rewardSlices, 6)}/6</Text>
+                        </View>
+                        <View style={styles.sliceRow}>
+                            {[0, 1, 2, 3, 4, 5].map(i => (
+                                <Text key={i} style={{ fontSize: 28 }}>{i < rewardSlices ? '🍕' : '⬜'}</Text>
+                            ))}
+                        </View>
+                        <Text style={styles.rewardWidgetHint}>
+                            {rewardSlices >= 6
+                                ? '🎉 Redeem your free pizza at checkout!'
+                                : `${6 - Math.min(rewardSlices, 6)} more ${6 - Math.min(rewardSlices, 6) === 1 ? 'slice' : 'slices'} to earn a free pizza`}
+                        </Text>
+                    </View>
+                )}
 
                 {/* Menu Items */}
                 <View style={styles.menuSection}>
@@ -152,6 +180,21 @@ const styles = StyleSheet.create({
         borderWidth: 1.5, borderColor: '#fecaca',
     },
     signOutText: { fontSize: 15, fontWeight: '800', color: '#dc2626' },
+
+    rewardWidget: {
+        backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20,
+        padding: 18, marginBottom: 16,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
+        borderWidth: 1.5, borderColor: '#dcfce7',
+    },
+    rewardWidgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+    rewardWidgetTitle: { fontSize: 15, fontWeight: '900', color: '#0f172a' },
+    rewardWidgetBadge: {
+        backgroundColor: '#dcfce7', color: '#15803d', fontWeight: '900', fontSize: 13,
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
+    },
+    sliceRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+    rewardWidgetHint: { fontSize: 13, color: '#64748b', fontWeight: '600' },
 
     version: { textAlign: 'center', color: '#cbd5e1', fontSize: 12, marginTop: 20 },
     devBy: { textAlign: 'center', fontSize: 12, color: '#cbd5e1', marginTop: 4, marginBottom: 20 },

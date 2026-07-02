@@ -1,23 +1,44 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, TextInput, Alert, Modal, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, TextInput, Alert, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MapPin, Plus, MapPinOff, Home, Briefcase, Globe, X, Navigation } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Isolated modal component — its own state never re-renders the parent list ──
+// Returns cleaned 10-digit number or null if invalid
+const parseIndianPhone = (input) => {
+    const digits = input.replace(/\D/g, '');
+    if (digits.startsWith('91') && digits.length === 12) return digits.slice(2);
+    if (digits.startsWith('0')  && digits.length === 11) return digits.slice(1);
+    if (digits.length === 10)                             return digits;
+    return null;
+};
+
 const AddressFormModal = React.memo(({ visible, onClose, onSave }) => {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [address, setAddress] = useState('');
+    const [phoneError, setPhoneError] = useState('');
     const [saving, setSaving] = useState(false);
 
-    const reset = () => { setName(''); setPhone(''); setAddress(''); };
+    const reset = () => { setName(''); setPhone(''); setAddress(''); setPhoneError(''); };
 
     const handleClose = () => { reset(); onClose(); };
 
+    const handlePhoneChange = (text) => {
+        // Allow digits, +, spaces, hyphens — strip everything else
+        setPhone(text.replace(/[^\d+\- ]/g, ''));
+        if (phoneError) setPhoneError('');
+    };
+
     const handleSave = async () => {
-        if (!name.trim() || !phone.trim() || !address.trim()) {
+        if (!name.trim() || !address.trim()) {
             Alert.alert('Error', 'Please fill in all fields.');
+            return;
+        }
+        const cleaned = parseIndianPhone(phone);
+        if (!cleaned || !/^[6-9]\d{9}$/.test(cleaned)) {
+            setPhoneError('Enter a valid 10-digit Indian mobile number (starts with 6-9).');
             return;
         }
         setSaving(true);
@@ -26,7 +47,7 @@ const AddressFormModal = React.memo(({ visible, onClose, onSave }) => {
                 id: Date.now().toString(),
                 title: name.trim(),
                 name: name.trim(),
-                phone: phone.trim(),
+                phone: cleaned,   // always store clean 10-digit number
                 address: address.trim(),
                 type: 'Home',
                 lat: null,
@@ -49,11 +70,15 @@ const AddressFormModal = React.memo(({ visible, onClose, onSave }) => {
             onRequestClose={handleClose}
             statusBarTranslucent={true}
         >
-            <View style={styles.modalOverlay}>
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    style={{ width: '100%' }}
-                >
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.modalOverlay}
+            >
+                <TouchableWithoutFeedback onPress={handleClose}>
+                    <View style={{ flex: 1 }} />
+                </TouchableWithoutFeedback>
+
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                     <View style={styles.modalContent}>
                         <View style={styles.modalHandle} />
                         <View style={styles.modalHeader}>
@@ -61,25 +86,40 @@ const AddressFormModal = React.memo(({ visible, onClose, onSave }) => {
                             <TouchableOpacity onPress={handleClose}><X size={24} color="#94a3b8" /></TouchableOpacity>
                         </View>
 
-                        <Text style={styles.label}>Name</Text>
-                        <TextInput style={styles.input} placeholder="Receiver's full name" placeholderTextColor="#94a3b8"
-                            value={name} onChangeText={setName} returnKeyType="next" />
+                        <ScrollView
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}
+                            bounces={false}
+                        >
+                            <Text style={styles.label}>Name</Text>
+                            <TextInput style={styles.input} placeholder="Receiver's full name" placeholderTextColor="#94a3b8"
+                                value={name} onChangeText={setName} returnKeyType="next" />
 
-                        <Text style={styles.label}>Phone Number</Text>
-                        <TextInput style={styles.input} placeholder="+91 XXXXX XXXXX" placeholderTextColor="#94a3b8"
-                            keyboardType="phone-pad" value={phone} onChangeText={setPhone} returnKeyType="next" />
+                            <Text style={styles.label}>Phone Number</Text>
+                            <TextInput
+                                style={[styles.input, phoneError ? styles.inputError : null]}
+                                placeholder="+91 XXXXX XXXXX"
+                                placeholderTextColor="#94a3b8"
+                                keyboardType="phone-pad"
+                                value={phone}
+                                onChangeText={handlePhoneChange}
+                                returnKeyType="next"
+                                maxLength={15}
+                            />
+                            {phoneError ? <Text style={styles.errorText}>{phoneError}</Text> : null}
 
-                        <Text style={styles.label}>Address</Text>
-                        <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top', paddingTop: 12 }]}
-                            placeholder="Street, Apt, Landmark, City..." placeholderTextColor="#94a3b8"
-                            multiline value={address} onChangeText={setAddress} />
+                            <Text style={styles.label}>Address</Text>
+                            <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top', paddingTop: 12 }]}
+                                placeholder="Street, Apt, Landmark, City..." placeholderTextColor="#94a3b8"
+                                multiline value={address} onChangeText={setAddress} />
 
-                        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.8} disabled={saving}>
-                            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>SAVE ADDRESS</Text>}
-                        </TouchableOpacity>
+                            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.8} disabled={saving}>
+                                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>SAVE ADDRESS</Text>}
+                            </TouchableOpacity>
+                        </ScrollView>
                     </View>
-                </KeyboardAvoidingView>
-            </View>
+                </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
         </Modal>
     );
 });
@@ -248,6 +288,8 @@ const styles = StyleSheet.create({
     modalTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
     label: { fontSize: 14, fontWeight: '700', color: '#475569', marginBottom: 8, marginTop: 8 },
     input: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, paddingHorizontal: 16, fontSize: 15, height: 50, color: '#0f172a' },
+    inputError: { borderColor: '#ef4444', backgroundColor: '#fff5f5' },
+    errorText: { fontSize: 12, color: '#ef4444', fontWeight: '600', marginTop: 6, marginLeft: 4 },
     saveBtn: { backgroundColor: '#22973a', paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 24 },
     saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
 });

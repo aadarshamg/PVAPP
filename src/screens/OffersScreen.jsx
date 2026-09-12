@@ -64,19 +64,23 @@ export default function OffersScreen({ navigation }) {
     };
 
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+        <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+            <StatusBar barStyle="light-content" />
 
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft color="#fff" size={22} />
-                </TouchableOpacity>
-                <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle}>Deals & Offers</Text>
-                    <Text style={styles.headerSub}>Save more with amazing deals!</Text>
-                </View>
-                <View style={{ width: 40 }} />
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                            <ArrowLeft color="#fff" size={22} />
+                        </TouchableOpacity>
+                        <View style={styles.headerCenter}>
+                            <Text style={styles.headerTitle}>Deals & Offers</Text>
+                            <Text style={styles.headerSub}>Save more with amazing deals!</Text>
+                        </View>
+                        <View style={{ width: 40 }} />
+                    </View>
+                </SafeAreaView>
             </View>
 
             {loading ? (
@@ -85,20 +89,6 @@ export default function OffersScreen({ navigation }) {
                 </View>
             ) : (
                 <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-
-                    {/* Hero banner */}
-                    <View style={styles.heroBanner}>
-                        <View style={styles.heroLeft}>
-                            <Text style={styles.heroEmoji}>🎉</Text>
-                            <View>
-                                <Text style={styles.heroTitle}>SUPER SAVER</Text>
-                                <Text style={styles.heroDesc}>Get up to 40% OFF on weekend orders!</Text>
-                            </View>
-                        </View>
-                        <View style={styles.heroCodeBox}>
-                            <Text style={styles.heroCodeText}>Use Code: WEEKEND40</Text>
-                        </View>
-                    </View>
 
                     {/* Available Offers */}
                     {coupons.length > 0 && (
@@ -179,7 +169,10 @@ const styles = StyleSheet.create({
 
     // Header
     header: {
-        backgroundColor: '#22973a', flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#22973a',
+    },
+    headerRow: {
+        flexDirection: 'row', alignItems: 'center',
         justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14,
     },
     backBtn: {
@@ -191,22 +184,6 @@ const styles = StyleSheet.create({
     headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
 
     content: { padding: 20 },
-
-    // Hero Banner
-    heroBanner: {
-        backgroundColor: '#f97316',
-        borderRadius: 20, padding: 20, marginBottom: 28,
-        overflow: 'hidden',
-    },
-    heroLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-    heroEmoji: { fontSize: 32 },
-    heroTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
-    heroDesc: { fontSize: 13, color: 'rgba(255,255,255,0.9)', marginTop: 2 },
-    heroCodeBox: {
-        backgroundColor: '#fff', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20,
-        alignItems: 'center',
-    },
-    heroCodeText: { fontSize: 15, fontWeight: '900', color: '#f97316', letterSpacing: 1 },
 
     sectionTitle: { fontSize: 19, fontWeight: '900', color: '#0f172a', marginBottom: 16 },
 

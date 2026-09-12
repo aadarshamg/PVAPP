@@ -1,14 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import {
     View, Text, TouchableOpacity, StyleSheet,
-    KeyboardAvoidingView, Platform, ActivityIndicator,
-    Alert, TextInput, ScrollView, Image, StatusBar, BackHandler,
+    ActivityIndicator, Alert, TextInput, Image, StatusBar, BackHandler,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
-import { Mail, ArrowLeft } from 'lucide-react-native';
+import { Mail, KeyRound, Eye, EyeOff } from 'lucide-react-native';
 import { useAuth } from '../contexts/AuthContext';
+import AuthSubScreen, { authSubStyles } from '../components/AuthSubScreen';
 
 const LOGO = require('../../assets/images/logo.png');
 
@@ -22,11 +22,11 @@ const GoogleIcon = ({ white }) => (
 );
 
 // ─── Options Screen ────────────────────────────────────────────────────────────
-function OptionsView({ onGoogle, onEmail, loading }) {
+function OptionsView({ onGoogle, onEmail, loading, onTerms, onPrivacy }) {
     const insets = useSafeAreaInsets();
     return (
         <View style={{ flex: 1, backgroundColor: '#22973a' }}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+            <StatusBar barStyle="light-content" />
 
             {/* Hero */}
             <View style={[styles.hero, { paddingTop: insets.top + 24 }]}>
@@ -71,44 +71,12 @@ function OptionsView({ onGoogle, onEmail, loading }) {
 
                 <Text style={styles.terms}>
                     By continuing, you agree to our{' '}
-                    <Text style={styles.termsLink}>Terms of Service</Text>
+                    <Text style={styles.termsLink} onPress={onTerms}>Terms of Service</Text>
                     {' '}and{' '}
-                    <Text style={styles.termsLink}>Privacy Policy</Text>
+                    <Text style={styles.termsLink} onPress={onPrivacy}>Privacy Policy</Text>
                 </Text>
             </View>
         </View>
-    );
-}
-
-// ─── Sub-screen shell ──────────────────────────────────────────────────────────
-function SubScreen({ onBack, icon, title, subtitle, children }) {
-    const insets = useSafeAreaInsets();
-    return (
-        <KeyboardAvoidingView
-            style={{ flex: 1, backgroundColor: '#fff' }}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-            <ScrollView
-                style={{ backgroundColor: '#fff' }}
-                contentContainerStyle={[styles.subScroll, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 }]}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-            >
-                <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
-                    <ArrowLeft size={22} color="#22973a" strokeWidth={2.5} />
-                    <Text style={styles.backText}>Back</Text>
-                </TouchableOpacity>
-
-                <View style={styles.subHero}>
-                    {icon}
-                    <Text style={styles.subTitle}>{title}</Text>
-                    {subtitle ? <Text style={styles.subSubtitle}>{subtitle}</Text> : null}
-                </View>
-
-                {children}
-            </ScrollView>
-        </KeyboardAvoidingView>
     );
 }
 
@@ -117,15 +85,17 @@ export default function LoginScreen({ navigation }) {
     const [mode, setMode]         = useState('options');
     const [email, setEmail]       = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading]   = useState(false);
+    const [resetSent, setResetSent] = useState(false);
 
-    const { signInWithEmail, signInWithGoogle } = useAuth();
+    const { signInWithEmail, signInWithGoogle, resetPasswordForEmail } = useAuth();
 
     // Intercept Android hardware back so it navigates between modes, not out of the app
     useFocusEffect(
         useCallback(() => {
             const onBack = () => {
-                if (mode === 'email') { setMode('options'); return true; }
+                if (mode === 'email' || mode === 'forgot') { setMode('options'); return true; }
                 return false;
             };
             const subscription = BackHandler.addEventListener('hardwareBackPress', onBack);
@@ -159,29 +129,47 @@ export default function LoginScreen({ navigation }) {
         }
     };
 
+    const handleForgotPassword = async () => {
+        if (!email) {
+            Alert.alert('Missing Email', 'Please enter your account email.');
+            return;
+        }
+        setLoading(true);
+        try {
+            await resetPasswordForEmail(email);
+            setResetSent(true);
+        } catch (e) {
+            Alert.alert('Reset Failed', e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     if (mode === 'options') {
         return (
             <OptionsView
                 onGoogle={handleGoogle}
                 onEmail={() => setMode('email')}
                 loading={loading}
+                onTerms={() => navigation.navigate('Legal', { section: 'terms' })}
+                onPrivacy={() => navigation.navigate('Legal', { section: 'privacy' })}
             />
         );
     }
 
     if (mode === 'email') {
         return (
-            <SubScreen
+            <AuthSubScreen
                 onBack={() => setMode('options')}
                 icon={<Mail size={48} color="#EA4335" strokeWidth={1.5} style={{ marginBottom: 12 }} />}
                 title="Sign In with Email"
                 subtitle="Use your registered email and password"
             >
-                <View style={styles.card}>
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Email</Text>
+                <View style={authSubStyles.card}>
+                    <View style={authSubStyles.inputGroup}>
+                        <Text style={authSubStyles.label}>Email</Text>
                         <TextInput
-                            style={styles.input}
+                            style={authSubStyles.input}
                             placeholder="you@example.com"
                             placeholderTextColor="#9CA3AF"
                             value={email}
@@ -191,36 +179,99 @@ export default function LoginScreen({ navigation }) {
                             autoFocus
                         />
                     </View>
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Password</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Enter your password"
-                            placeholderTextColor="#9CA3AF"
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry
-                        />
+                    <View style={authSubStyles.inputGroup}>
+                        <Text style={authSubStyles.label}>Password</Text>
+                        <View style={styles.passwordWrapper}>
+                            <TextInput
+                                style={[authSubStyles.input, styles.passwordInput]}
+                                placeholder="Enter your password"
+                                placeholderTextColor="#9CA3AF"
+                                value={password}
+                                onChangeText={setPassword}
+                                secureTextEntry={!showPassword}
+                            />
+                            <TouchableOpacity
+                                style={styles.eyeBtn}
+                                onPress={() => setShowPassword(prev => !prev)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                                {showPassword
+                                    ? <EyeOff size={20} color="#9CA3AF" />
+                                    : <Eye size={20} color="#9CA3AF" />
+                                }
+                            </TouchableOpacity>
+                        </View>
                     </View>
+                    <TouchableOpacity style={styles.forgotBtn} onPress={() => { setResetSent(false); setMode('forgot'); }}>
+                        <Text style={styles.forgotText}>Forgot Password?</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity
-                        style={[styles.primaryBtn, loading && styles.btnDisabled]}
+                        style={[authSubStyles.primaryBtn, loading && authSubStyles.btnDisabled]}
                         onPress={handleEmailLogin}
                         disabled={loading}
                         activeOpacity={0.85}
                     >
                         {loading
                             ? <ActivityIndicator color="#fff" />
-                            : <Text style={styles.primaryBtnText}>Sign In</Text>
+                            : <Text style={authSubStyles.primaryBtnText}>Sign In</Text>
                         }
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.resendBtn} onPress={() => navigation.navigate('SignUp')}>
-                        <Text style={styles.resendText}>
+                    <TouchableOpacity style={authSubStyles.linkBtn} onPress={() => navigation.navigate('SignUp')}>
+                        <Text style={authSubStyles.linkText}>
                             New here?{' '}
-                            <Text style={styles.resendLink}>Create Account</Text>
+                            <Text style={authSubStyles.linkBold}>Create Account</Text>
                         </Text>
                     </TouchableOpacity>
                 </View>
-            </SubScreen>
+            </AuthSubScreen>
+        );
+    }
+
+    if (mode === 'forgot') {
+        return (
+            <AuthSubScreen
+                onBack={() => setMode('email')}
+                icon={<KeyRound size={48} color="#22973a" strokeWidth={1.5} style={{ marginBottom: 12 }} />}
+                title="Reset Password"
+                subtitle={resetSent
+                    ? 'Check your email for a reset link'
+                    : 'Enter your account email and we\'ll send you a reset link'}
+            >
+                <View style={authSubStyles.card}>
+                    {resetSent ? (
+                        <Text style={styles.resetSentText}>
+                            We've sent a password reset link to {email}. Tap the link on this device to set a new password.
+                        </Text>
+                    ) : (
+                        <>
+                            <View style={authSubStyles.inputGroup}>
+                                <Text style={authSubStyles.label}>Email</Text>
+                                <TextInput
+                                    style={authSubStyles.input}
+                                    placeholder="you@example.com"
+                                    placeholderTextColor="#9CA3AF"
+                                    value={email}
+                                    onChangeText={setEmail}
+                                    keyboardType="email-address"
+                                    autoCapitalize="none"
+                                    autoFocus
+                                />
+                            </View>
+                            <TouchableOpacity
+                                style={[authSubStyles.primaryBtn, loading && authSubStyles.btnDisabled]}
+                                onPress={handleForgotPassword}
+                                disabled={loading}
+                                activeOpacity={0.85}
+                            >
+                                {loading
+                                    ? <ActivityIndicator color="#fff" />
+                                    : <Text style={authSubStyles.primaryBtnText}>Send Reset Link</Text>
+                                }
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </View>
+            </AuthSubScreen>
         );
     }
 
@@ -228,6 +279,11 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+    // ── Password visibility toggle ─────────────────────────────────
+    passwordWrapper: { position: 'relative', justifyContent: 'center' },
+    passwordInput: { paddingRight: 46 },
+    eyeBtn: { position: 'absolute', right: 14 },
+
     // ── Options ──────────────────────────────────────────────────
     hero: {
         alignItems: 'center',
@@ -266,7 +322,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
 
-    // ── Buttons ───────────────────────────────────────────────────
+    // ── Options primary button ─────────────────────────────────────
     primaryBtn: {
         backgroundColor: '#22973a',
         paddingVertical: 16,
@@ -287,7 +343,6 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
     },
-    btnDisabled: { opacity: 0.65 },
 
     // ── Divider ───────────────────────────────────────────────────
     divider: {
@@ -335,79 +390,10 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
-    // ── Sub-screen ────────────────────────────────────────────────
-    subScroll: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-    },
-    backBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingVertical: 10,
-        alignSelf: 'flex-start',
-    },
-    backText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#22973a',
-    },
-    subHero: {
-        alignItems: 'center',
-        paddingTop: 28,
-        paddingBottom: 28,
-    },
-    subTitle: {
-        fontSize: 26,
-        fontWeight: '900',
-        color: '#0f172a',
-    },
-    subSubtitle: {
-        fontSize: 14,
-        color: '#64748b',
-        marginTop: 6,
-        textAlign: 'center',
-        lineHeight: 20,
-    },
-    // ── Card ──────────────────────────────────────────────────────
-    card: {
-        backgroundColor: '#fff',
-        borderRadius: 20,
-        padding: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 12,
-        elevation: 4,
-        borderWidth: 1,
-        borderColor: '#F1F5F9',
-    },
+    // ── Forgot password link ───────────────────────────────────────
+    forgotBtn: { alignSelf: 'flex-end', marginBottom: 16, marginTop: -8 },
+    forgotText: { fontSize: 13, fontWeight: '700', color: '#22973a' },
 
-    // ── Resend ────────────────────────────────────────────────────
-    resendBtn: {
-        alignItems: 'center',
-        marginTop: 16,
-        paddingVertical: 8,
-    },
-    resendText: { fontSize: 14, color: '#6B7280' },
-    resendLink: { color: '#22973a', fontWeight: '700' },
-
-    // ── Form inputs ───────────────────────────────────────────────
-    inputGroup: { marginBottom: 16 },
-    label: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 6,
-    },
-    input: {
-        backgroundColor: '#F9FAFB',
-        borderWidth: 1.5,
-        borderColor: '#E5E7EB',
-        borderRadius: 14,
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        fontSize: 15,
-        color: '#111827',
-    },
+    // ── Reset sent confirmation ─────────────────────────────────────
+    resetSentText: { fontSize: 14, color: '#374151', lineHeight: 21, textAlign: 'center' },
 });

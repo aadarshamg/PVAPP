@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapPin, ArrowRight, User, Phone } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import { useStore } from '../contexts/StoreContext';
 
 // Step states
 const STEP_CHECKING = 'checking';
@@ -16,6 +17,7 @@ const STEP_OUTSIDE  = 'outside';
 const STEP_RECEIVER = 'receiver';
 
 export default function DeliveryZoneCheckScreen({ navigation }) {
+    const { selectedStore } = useStore();
     const [step, setStep] = useState(STEP_CHECKING);
     const [receiverName, setReceiverName] = useState('');
     const [receiverPhone, setReceiverPhone] = useState('');
@@ -30,55 +32,63 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
     };
 
     const checkZone = async () => {
+        setStep(STEP_CHECKING);
         try {
-            // Check cached result first (valid for 1 hour) — skips GPS entirely on repeat opens
+            // Only cache "inside" results (3-min TTL) — never cache "outside"
+            // because admin may update the zone at any time
             const cached = await AsyncStorage.getItem('@zone_check_cache');
             if (cached) {
                 const { result, ts } = JSON.parse(cached);
-                if (Date.now() - ts < 60 * 60 * 1000) {
-                    if (result === 'inside') { proceedToApp(); return; }
-                    if (result === 'outside') { setStep(STEP_OUTSIDE); return; }
+                if (result === 'inside' && Date.now() - ts < 3 * 60 * 1000) {
+                    proceedToApp();
+                    return;
                 }
             }
+            // Clear any stale cache before fresh check
+            await AsyncStorage.removeItem('@zone_check_cache');
 
             // Request GPS permission
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') { proceedToApp(); return; }
 
-            // Fetch zone from Supabase + GPS position in parallel
-            const GPS_TIMEOUT = 5000;
-            const gpsPromise = (async () => {
-                // Try last-known position first (instant, no network needed)
-                const last = await Location.getLastKnownPositionAsync();
-                if (last) return last;
-                // Fall back to fresh fix with a tight timeout
-                return Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-            })();
+            // Fetch this store's delivery zone (each store draws its own polygon)
+            if (!selectedStore?.id) { proceedToApp(); return; }
+            const { data } = await supabase
+                .from('stores')
+                .select('delivery_zone')
+                .eq('id', selectedStore.id)
+                .single();
 
+            if (!data?.delivery_zone) { proceedToApp(); return; }
+
+            const zone = data.delivery_zone.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+            if (zone.length < 3) { proceedToApp(); return; }
+
+            // Always get a fresh GPS position — never use last-known (can be hours old)
+            const GPS_TIMEOUT = 12000;
+            const gpsPromise = Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Balanced,
+            });
             const timeoutPromise = new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('gps_timeout')), GPS_TIMEOUT)
             );
 
-            const [pos, { data }] = await Promise.all([
-                Promise.race([gpsPromise, timeoutPromise]),
-                supabase.from('store_settings').select('value').eq('key', 'delivery_zone').single(),
-            ]);
-
-            if (!data?.value) { proceedToApp(); return; }
-
-            const zone = JSON.parse(data.value).map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+            const pos = await Promise.race([gpsPromise, timeoutPromise]);
             const coord = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-            const inside = zone.length < 3 || isPointInPolygon(coord, zone);
+            const inside = isPointInPolygon(coord, zone);
 
-            // Cache the result
-            await AsyncStorage.setItem('@zone_check_cache', JSON.stringify({
-                result: inside ? 'inside' : 'outside',
-                ts: Date.now(),
-            }));
-
-            if (inside) { proceedToApp(); } else { setStep(STEP_OUTSIDE); }
+            if (inside) {
+                // Cache "inside" for 3 minutes to avoid GPS on every open
+                await AsyncStorage.setItem('@zone_check_cache', JSON.stringify({
+                    result: 'inside',
+                    ts: Date.now(),
+                }));
+                proceedToApp();
+            } else {
+                setStep(STEP_OUTSIDE);
+            }
         } catch {
-            // GPS timeout, offline, any error — allow access
+            // GPS timeout, permission denied, offline — allow access
             proceedToApp();
         }
     };
@@ -131,6 +141,10 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
                     >
                         <Text style={styles.orderForBtnText}>Order for Someone Else</Text>
                         <ArrowRight size={20} color="#fff" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={checkZone} style={styles.retryBtn}>
+                        <Text style={styles.retryBtnText}>↺ Try Again</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={proceedToApp} style={styles.laterBtn}>
@@ -222,6 +236,9 @@ const styles = StyleSheet.create({
         width: '100%', marginTop: 8,
     },
     orderForBtnText: { color: '#fff', fontSize: 17, fontWeight: '900' },
+
+    retryBtn: { paddingVertical: 12, paddingHorizontal: 24, borderWidth: 1.5, borderColor: '#22973a', borderRadius: 12 },
+    retryBtnText: { fontSize: 15, color: '#22973a', fontWeight: '700' },
 
     laterBtn: { paddingVertical: 12 },
     laterBtnText: { fontSize: 15, color: '#94a3b8', fontWeight: '600' },

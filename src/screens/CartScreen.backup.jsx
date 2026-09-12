@@ -11,9 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useStore } from '../contexts/StoreContext';
 import { isStoreOpen } from '../utils/storeStatus';
-import { formatOrderNumber } from '../utils/storeCode';
 import PhonePePaymentSDK from 'react-native-phonepe-pg';
 
 const { width } = Dimensions.get('window');
@@ -25,17 +23,9 @@ export default function CartScreen({ navigation }) {
         updateQuantity, removeFromCart, applyCoupon, removeCoupon, clearCart
     } = useCart();
     const { user } = useAuth();
-    const { selectedStore } = useStore();
-
-    // Cart is opened both as the "CartTab" bottom-tab (tab bar visible, already
-    // reserves its own bottom safe-area space) and as a standalone pushed screen
-    // (from "Add to Cart" / reorder — no tab bar, needs its own safe-area padding).
-    // Only add the extra bottom inset in the latter case, or it double-counts on the former.
-    const bottomEdges = navigation.getParent() ? [] : ['bottom'];
 
     const [couponInput, setCouponInput] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('phonepe'); // 'cash' | 'phonepe'
-    const [codEnabled, setCodEnabled] = useState(true);
     const [codExtraCharge, setCodExtraCharge] = useState(0);
     const codFee = paymentMethod === 'cash' ? codExtraCharge : 0;
     const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
@@ -56,22 +46,19 @@ export default function CartScreen({ navigation }) {
     const finalTotal = Math.max(0, total + codFee + addonTotal - rewardDiscount);
 
     useEffect(() => {
-        if (!selectedStore?.id) return;
         supabase
             .from('store_settings')
             .select('value')
-            .eq('store_id', selectedStore.id)
             .eq('key', 'min_order_amount')
             .maybeSingle()
             .then(({ data }) => { if (data?.value) setMinOrderAmount(Number(data.value)); });
-    }, [selectedStore?.id]);
+    }, []);
 
     useEffect(() => {
-        if (!selectedStore?.id) return;
-        supabase.from('addons').select('*').eq('store_id', selectedStore.id).eq('is_available', true)
+        supabase.from('addons').select('*').eq('is_available', true)
             .order('is_veg', { ascending: false }).order('price', { ascending: true }).order('name', { ascending: true })
             .then(({ data }) => { if (data) setAvailableAddons(data); });
-    }, [selectedStore?.id]);
+    }, []);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -80,31 +67,18 @@ export default function CartScreen({ navigation }) {
     }, [user?.id]);
 
     useEffect(() => {
-        if (!selectedStore?.id) return;
-        // Reward settings are global (shared across stores); COD settings are per-store.
-        Promise.all([
-            supabase.from('store_settings').select('key, value')
-                .is('store_id', null)
-                .in('key', ['reward_enabled', 'reward_slices_required', 'reward_pizza_value', 'reward_min_order_total']),
-            supabase.from('store_settings').select('key, value')
-                .eq('store_id', selectedStore.id)
-                .in('key', ['cod_enabled', 'cod_extra_charge']),
-        ]).then(([globalRes, storeRes]) => {
-            const m = {};
-            globalRes.data?.forEach(r => { m[r.key] = r.value; });
-            storeRes.data?.forEach(r => { m[r.key] = r.value; });
-            if (m.reward_enabled !== undefined) setRewardEnabled(m.reward_enabled !== 'false');
-            if (m.reward_slices_required) setSlicesRequired(Number(m.reward_slices_required));
-            if (m.reward_pizza_value) setFreePizzaValue(Number(m.reward_pizza_value));
-            if (m.reward_min_order_total) setMinOrderForSlice(Number(m.reward_min_order_total));
-            if (m.cod_enabled !== undefined) {
-                const enabled = m.cod_enabled !== 'false';
-                setCodEnabled(enabled);
-                if (!enabled) setPaymentMethod('phonepe');
-            }
-            if (m.cod_extra_charge !== undefined) setCodExtraCharge(Number(m.cod_extra_charge));
-        });
-    }, [selectedStore?.id]);
+        supabase.from('store_settings').select('key, value')
+            .in('key', ['reward_enabled', 'reward_slices_required', 'reward_pizza_value', 'reward_min_order_total', 'cod_extra_charge'])
+            .then(({ data }) => {
+                const m = {};
+                data?.forEach(r => { m[r.key] = r.value; });
+                if (m.reward_enabled !== undefined) setRewardEnabled(m.reward_enabled !== 'false');
+                if (m.reward_slices_required) setSlicesRequired(Number(m.reward_slices_required));
+                if (m.reward_pizza_value) setFreePizzaValue(Number(m.reward_pizza_value));
+                if (m.reward_min_order_total) setMinOrderForSlice(Number(m.reward_min_order_total));
+                if (m.cod_extra_charge !== undefined) setCodExtraCharge(Number(m.cod_extra_charge));
+            });
+    }, []);
 
     useFocusEffect(
         useCallback(() => {
@@ -146,14 +120,9 @@ export default function CartScreen({ navigation }) {
             Alert.alert('Sign In Required', 'You must be logged in to place an order.');
             return null;
         }
-        if (!selectedStore?.id) {
-            Alert.alert('No Store Selected', 'Please select a store before placing an order.');
-            return null;
-        }
         const { data: storeSettings } = await supabase
             .from('store_settings')
             .select('key, value')
-            .eq('store_id', selectedStore.id)
             .in('key', ['store_open', 'opening_time', 'closing_time']);
         const settingsMap = {};
         storeSettings?.forEach(r => { settingsMap[r.key] = r.value; });
@@ -187,7 +156,6 @@ export default function CartScreen({ navigation }) {
         const { data: minSetting } = await supabase
             .from('store_settings')
             .select('value')
-            .eq('store_id', selectedStore.id)
             .eq('key', 'min_order_amount')
             .maybeSingle();
         const effectiveMin = minSetting?.value ? Number(minSetting.value) : minOrderAmount;
@@ -206,31 +174,15 @@ export default function CartScreen({ navigation }) {
         const safePhone   = (receiver?.phone || deliveryAddress.phone || '').replace(/[^\d+\-() ]/g, '').slice(0, 20);
         const safeAddress = (deliveryAddress.address || '').trim().slice(0, 300);
         const sanitizedItems = [
-            ...cartItems.filter(item => !item.isFeastCombo).map(item => ({
+            ...cartItems.map(item => ({
                 product_id:    item.product.id,
                 product_name:  item.product.name.trim().slice(0, 150),
                 size:          item.size.label,
                 crust_name:    item.crust?.name || null,
                 toppings_text: item.toppings?.length > 0 ? item.toppings.map(t => t.name).join(', ') : null,
                 cheese_name:   item.cheese?.name || null,
-                base_name:     item.base?.name || null,
                 dips_text:     item.dips?.length > 0 ? item.dips.map(d => d.name).join(', ') : null,
-                addons_text:   item.addons?.length > 0 ? item.addons.map(a => a.name).join(', ') : null,
                 instructions:  item.instructions?.trim() || null,
-                quantity:      Math.max(1, Math.min(item.qty, 50)),
-                price:         Math.round(item.unitPrice * 100) / 100,
-            })),
-            ...cartItems.filter(item => item.isFeastCombo).map(item => ({
-                product_id:    null,
-                product_name:  item.name,
-                size:          'Feast',
-                crust_name:    null,
-                toppings_text: null,
-                cheese_name:   null,
-                base_name:     null,
-                dips_text:     null,
-                addons_text:   null,
-                instructions:  null,
                 quantity:      Math.max(1, Math.min(item.qty, 50)),
                 price:         Math.round(item.unitPrice * 100) / 100,
             })),
@@ -241,9 +193,7 @@ export default function CartScreen({ navigation }) {
                 crust_name:    null,
                 toppings_text: null,
                 cheese_name:   null,
-                base_name:     null,
                 dips_text:     null,
-                addons_text:   null,
                 instructions:  null,
                 quantity:      Math.max(1, Math.min(addon.qty, 50)),
                 price:         Math.round(Number(addon.price) * 100) / 100,
@@ -270,12 +220,6 @@ export default function CartScreen({ navigation }) {
     };
 
     const handleCheckout = async () => {
-        if (paymentMethod === 'cash' && !codEnabled) {
-            Alert.alert('Cash on Delivery Unavailable', 'Cash on Delivery is currently disabled. Please pay online to place your order.');
-            setPaymentMethod('phonepe');
-            return;
-        }
-
         const prepared = await prepareCheckout();
         if (!prepared) return;
 
@@ -291,7 +235,6 @@ export default function CartScreen({ navigation }) {
         try {
             const orderData = {
                 customer_id:      user.id,
-                store_id:         selectedStore.id,
                 customer_name:    safeName,
                 customer_phone:   safePhone,
                 delivery_address: safeAddress,
@@ -334,7 +277,7 @@ export default function CartScreen({ navigation }) {
             await AsyncStorage.removeItem('@pizza_delivery_receiver');
             clearCart();
             navigation.replace('OrderSuccess', {
-                orderId:      formatOrderNumber(selectedStore.slug, insertedOrder.display_id),
+                orderId:      insertedOrder.display_id,
                 total:        total,
                 address:      safeAddress,
                 addressTitle: deliveryAddress.title || 'Home',
@@ -354,7 +297,6 @@ export default function CartScreen({ navigation }) {
             // 1. Create draft order with payment_status: 'pending'
             const orderData = {
                 customer_id:      user.id,
-                store_id:         selectedStore.id,
                 customer_name:    safeName,
                 customer_phone:   safePhone,
                 delivery_address: safeAddress,
@@ -404,19 +346,16 @@ export default function CartScreen({ navigation }) {
                 throw new Error(pgData?.error || fnError?.message || 'Payment initiation failed');
             }
 
-            const { token, phonePeOrderId } = pgData;
+            const { token } = pgData;
 
             if (!token) {
                 throw new Error('No order token received from payment gateway');
             }
-            if (!phonePeOrderId) {
-                throw new Error('No PhonePe order ID received from payment gateway');
-            }
 
                     // 3. Initialize PhonePe SDK and start native transaction flow
                     const sdkInit = await PhonePePaymentSDK.init(
-                        process.env.EXPO_PUBLIC_PHONEPE_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
-                        process.env.EXPO_PUBLIC_PHONEPE_MERCHANT_ID || '',
+                        process.env.PHONEPE_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
+                        process.env.PHONEPE_MERCHANT_ID || '',
                         user.id || '',
                         false
                     );
@@ -426,43 +365,45 @@ export default function CartScreen({ navigation }) {
                     }
 
                     const sdkRequestPayload = JSON.stringify({
-                        orderId: phonePeOrderId,
-                        merchantId: process.env.EXPO_PUBLIC_PHONEPE_MERCHANT_ID || '',
+                        orderId: `PV${insertedOrder.display_id}`,
+                        merchantId: process.env.PHONEPE_MERCHANT_ID || '',
                         token: token,
+                        amount: amountInPaise,
                         paymentMode: { type: 'PAY_PAGE' },
                     });
 
+                    // Base64-encode request body for the native SDK (fall back to Buffer when btoa unavailable)
+                    let sdkRequestBase64;
+                    try {
+                        if (typeof btoa === 'function') {
+                            sdkRequestBase64 = btoa(sdkRequestPayload);
+                        } else {
+                            const { Buffer } = await import('buffer');
+                            sdkRequestBase64 = Buffer.from(sdkRequestPayload).toString('base64');
+                        }
+                    } catch (_) {
+                        // Last resort: send raw JSON string (some SDK versions accept this)
+                        sdkRequestBase64 = sdkRequestPayload;
+                    }
+
                     const transactionResult = await PhonePePaymentSDK.startTransaction(
-                        sdkRequestPayload,
+                        sdkRequestBase64,
                         null
                     );
 
                     if (!transactionResult || transactionResult.status !== 'SUCCESS') {
-                        const rawError = transactionResult?.error || '';
-                        if (rawError.includes('USER_CANCEL')) {
-                            throw new Error('USER_CANCELLED');
-                        }
-                        throw new Error(rawError || 'PhonePe transaction failed');
+                        const message = transactionResult?.error || 'PhonePe transaction failed';
+                        throw new Error(message);
                     }
 
-                    // 4. Transaction flow returned SUCCESS from the SDK — that only means the
-                    // PhonePe UI closed cleanly, not that our webhook has landed yet. Reconcile
-                    // directly with PhonePe's own status API instead of trusting a single racy
-                    // read of the orders table (which caused paid orders to be marked failed).
-                    let finalState = null;
-                    for (let attempt = 0; attempt < 6; attempt++) {
-                        const { data: statusData, error: statusError } = await supabase.functions.invoke('check-phonepe-order-status', {
-                            body: { merchantOrderId: `PV${insertedOrder.display_id}` },
-                        });
-                        if (statusError || !statusData?.success) {
-                            throw new Error(statusData?.error || statusError?.message || 'Could not verify payment status');
-                        }
-                        finalState = statusData.state;
-                        if (finalState === 'COMPLETED' || finalState === 'FAILED') break;
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-                    }
+                    // 4. Transaction flow returned — check if payment was confirmed by webhook
+            const { data: orderStatus } = await supabase
+                .from('orders')
+                .select('payment_status')
+                .eq('id', insertedOrder.id)
+                .single();
 
-            if (finalState === 'COMPLETED') {
+            if (orderStatus?.payment_status === 'paid') {
                 if (rewardPizzaActive && user?.id) {
                     await supabase.from('profiles')
                         .update({ reward_slices: Math.max(0, rewardSlices - slicesRequired) })
@@ -471,7 +412,7 @@ export default function CartScreen({ navigation }) {
                 await AsyncStorage.removeItem('@pizza_delivery_receiver');
                 clearCart();
                 navigation.replace('OrderSuccess', {
-                    orderId:      formatOrderNumber(selectedStore.slug, insertedOrder.display_id),
+                    orderId:      insertedOrder.display_id,
                     total:        total,
                     address:      safeAddress,
                     addressTitle: deliveryAddress.title || 'Home',
@@ -479,27 +420,21 @@ export default function CartScreen({ navigation }) {
                 });
             } else {
                 // Mark order as cancelled (customers cannot delete — RLS blocks it)
-                const { error: cancelError } = await supabase.from('orders')
+                await supabase.from('orders')
                     .update({ status: 'cancelled', payment_status: 'failed' })
                     .eq('id', insertedOrder.id)
                     .eq('customer_id', user.id);
-                if (cancelError) console.warn('Failed to mark order cancelled:', cancelError.message);
                 Alert.alert('Payment Incomplete', 'Payment was not completed. Please try again.', [{ text: 'OK' }]);
             }
         } catch (error) {
             // Mark draft order as cancelled on unexpected error
             if (insertedOrder?.id) {
-                const { error: cancelError } = await supabase.from('orders')
+                await supabase.from('orders')
                     .update({ status: 'cancelled', payment_status: 'failed' })
                     .eq('id', insertedOrder.id)
                     .eq('customer_id', user.id);
-                if (cancelError) console.warn('Failed to mark order cancelled:', cancelError.message);
             }
-            if (error?.message === 'USER_CANCELLED') {
-                Alert.alert('Payment Cancelled', 'You cancelled the payment. Please try again.');
-            } else {
-                Alert.alert('Payment Error', error?.message || 'Something went wrong. Please try again.');
-            }
+            Alert.alert('Payment Error', error?.message || 'Something went wrong. Please try again.');
         } finally {
             setIsCheckingOut(false);
         }
@@ -545,11 +480,7 @@ export default function CartScreen({ navigation }) {
                 ? Math.round(subtotal * data.discount_value / 100)
                 : data.discount_value;
 
-            applyCoupon(code, {
-                type: data.discount_type,
-                value: data.discount_value,
-                minOrder: data.min_order_amount || 0,
-            });
+            applyCoupon(code, discountAmount);
             setCouponInput('');
             Alert.alert('Coupon Applied!', `You save ₹${discountAmount} on this order.`);
         } catch {
@@ -561,17 +492,13 @@ export default function CartScreen({ navigation }) {
 
     if (cartItems.length === 0) {
         return (
-            <SafeAreaView style={styles.safeContainer} edges={[...bottomEdges, 'left', 'right']}>
+            <SafeAreaView style={styles.safeContainer}>
                 <View style={styles.header}>
-                    <SafeAreaView edges={['top']}>
-                        <View style={styles.headerRow}>
-                            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                                <ArrowLeft color="#fff" size={24} />
-                            </TouchableOpacity>
-                            <Text style={styles.headerTitle}>My Cart</Text>
-                            <View style={{ width: 40 }} />
-                        </View>
-                    </SafeAreaView>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                        <ArrowLeft color="#fff" size={24} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>My Cart</Text>
+                    <View style={{ width: 40 }} />
                 </View>
                 <View style={styles.emptyContainer}>
                     <Text style={{ fontSize: 64, marginBottom: 16 }}>🛒</Text>
@@ -585,32 +512,28 @@ export default function CartScreen({ navigation }) {
     }
 
     return (
-        <SafeAreaView style={styles.safeContainer} edges={[...bottomEdges, 'left', 'right']}>
-            <StatusBar barStyle="light-content" />
-
+        <SafeAreaView style={styles.safeContainer}>
+            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+            
             <View style={styles.header}>
-                <SafeAreaView edges={['top']}>
-                    <View style={styles.headerRow}>
-                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                            <ArrowLeft color="#fff" size={24} />
-                        </TouchableOpacity>
-                        <Text style={styles.headerTitle}>My Cart</Text>
-                        <View style={{ width: 40 }} />
-                    </View>
-                </SafeAreaView>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                    <ArrowLeft color="#fff" size={24} />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>My Cart</Text>
+                <View style={{ width: 40 }} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} bounces={false}>
 
                 {/* Cart Items */}
-                {cartItems.filter(item => !item.isFeastCombo).map((item) => (
+                {cartItems.map((item) => (
                     <View key={item.cartItemId} style={styles.cartCard}>
                         <View style={styles.cartImgWrapper}>
                             {item.product.image_url ? (
                                 <Image source={{ uri: item.product.image_url }} style={styles.cartImg} />
                             ) : (
                                 <View style={{ flex: 1, backgroundColor: '#f3feb0', justifyContent: 'center', alignItems: 'center' }}>
-                                    <Text style={{ fontSize: 40 }}>🍽️</Text>
+                                    <Text style={{ fontSize: 40 }}>🍕</Text>
                                 </View>
                             )}
                         </View>
@@ -618,11 +541,8 @@ export default function CartScreen({ navigation }) {
                             <View style={styles.cartTopRow}>
                                 <View style={{ flex: 1, paddingRight: 8 }}>
                                     <Text style={styles.cartItemName} numberOfLines={2}>{item.product.name}</Text>
-                                    {!!item.size?.label && (
-                                        <Text style={styles.cartItemSize}>Size: <Text style={{fontWeight:'900', color: '#0f172a'}}>{item.size.label}</Text></Text>
-                                    )}
+                                    <Text style={styles.cartItemSize}>Size: <Text style={{fontWeight:'900', color: '#0f172a'}}>{item.size.label}</Text></Text>
                                     {item.crust && <Text style={styles.cartItemAddon}>Crust: {item.crust.name}</Text>}
-                                    {item.base && <Text style={styles.cartItemAddon}>Base: {item.base.name}</Text>}
                                     {item.toppings.length > 0 && (
                                         <Text style={styles.cartItemAddon} numberOfLines={1}>
                                             Extra: {item.toppings.map(t => t.name).join(', ')}
@@ -634,40 +554,6 @@ export default function CartScreen({ navigation }) {
                                 </TouchableOpacity>
                             </View>
                             
-                            <View style={styles.cartBottomRow}>
-                                <View style={styles.qtyContainer}>
-                                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.cartItemId, -1)}>
-                                        <Minus size={16} color="#94a3b8" />
-                                    </TouchableOpacity>
-                                    <Text style={styles.qtyText}>{item.qty}</Text>
-                                    <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.cartItemId, 1)}>
-                                        <Plus size={16} color="#94a3b8" />
-                                    </TouchableOpacity>
-                                </View>
-                                <Text style={styles.cartItemPrice}>₹{item.unitPrice * item.qty}</Text>
-                            </View>
-                        </View>
-                    </View>
-                ))}
-
-                {/* Feast Combos — added from the product detail screen */}
-                {cartItems.filter(item => item.isFeastCombo).map((item) => (
-                    <View key={item.cartItemId} style={styles.cartCard}>
-                        <View style={styles.cartImgWrapper}>
-                            <View style={{ flex: 1, backgroundColor: '#fffbeb', justifyContent: 'center', alignItems: 'center' }}>
-                                <Text style={{ fontSize: 40 }}>🎉</Text>
-                            </View>
-                        </View>
-                        <View style={styles.cartInfo}>
-                            <View style={styles.cartTopRow}>
-                                <View style={{ flex: 1, paddingRight: 8 }}>
-                                    <Text style={styles.cartItemName} numberOfLines={2}>{item.name}</Text>
-                                    <Text style={styles.cartItemSize}>Feast Combo</Text>
-                                </View>
-                                <TouchableOpacity onPress={() => removeFromCart(item.cartItemId)}>
-                                    <Trash2 color="#ef4444" size={20} />
-                                </TouchableOpacity>
-                            </View>
                             <View style={styles.cartBottomRow}>
                                 <View style={styles.qtyContainer}>
                                     <TouchableOpacity style={styles.qtyBtn} onPress={() => updateQuantity(item.cartItemId, -1)}>
@@ -725,7 +611,7 @@ export default function CartScreen({ navigation }) {
                 {/* Sides & Drinks */}
                 {availableAddons.length > 0 && (
                     <View style={styles.addonSection}>
-                        <Text style={styles.addonSectionTitle}>Sides & Drinks</Text>
+                        <Text style={styles.addonSectionTitle}>🥤 Sides & Drinks</Text>
                         <Text style={styles.addonSectionSub}>Add something on the side</Text>
                         <FlatList
                             data={availableAddons}
@@ -744,6 +630,9 @@ export default function CartScreen({ navigation }) {
                                                 ? <Image source={{ uri: addon.image_url }} style={styles.addonImg} />
                                                 : <View style={styles.addonImgPlaceholder}><Text style={{ fontSize: 32 }}>🥤</Text></View>
                                             }
+                                            <View style={[styles.vegMark, { borderColor: addon.is_veg ? '#22973a' : '#EF4444' }]}>
+                                                <View style={[styles.vegMarkDot, { backgroundColor: addon.is_veg ? '#22973a' : '#EF4444' }]} />
+                                            </View>
                                         </View>
                                         <Text style={styles.addonCardName} numberOfLines={1}>{addon.name}</Text>
                                         <View style={styles.addonCardFooter}>
@@ -927,18 +816,16 @@ export default function CartScreen({ navigation }) {
                                 Pay Online
                             </Text>
                         </TouchableOpacity>
-                        {codEnabled && (
-                            <TouchableOpacity
-                                style={[styles.paymentPill, paymentMethod === 'cash' && styles.paymentPillActive]}
-                                onPress={() => setPaymentMethod('cash')}
-                                activeOpacity={0.8}
-                            >
-                                <Banknote size={18} color={paymentMethod === 'cash' ? '#fff' : '#64748b'} />
-                                <Text style={[styles.paymentPillText, paymentMethod === 'cash' && styles.paymentPillTextActive]}>
-                                    Cash on Delivery
-                                </Text>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                            style={[styles.paymentPill, paymentMethod === 'cash' && styles.paymentPillActive]}
+                            onPress={() => setPaymentMethod('cash')}
+                            activeOpacity={0.8}
+                        >
+                            <Banknote size={18} color={paymentMethod === 'cash' ? '#fff' : '#64748b'} />
+                            <Text style={[styles.paymentPillText, paymentMethod === 'cash' && styles.paymentPillTextActive]}>
+                                Cash on Delivery
+                            </Text>
+                        </TouchableOpacity>
                     </View>
                     {paymentMethod === 'cash' && codExtraCharge > 0 && (
                         <Text style={styles.codFeeNote}>+ ₹{codExtraCharge} handling fee applies for Cash on Delivery</Text>
@@ -969,10 +856,7 @@ export default function CartScreen({ navigation }) {
 const styles = StyleSheet.create({
     safeContainer: { flex: 1, backgroundColor: '#f1f5f9' },
     header: {
-        backgroundColor: '#22973a',
-    },
-    headerRow: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: '#22973a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 20, height: 60,
     },
     backBtn: {
@@ -1034,7 +918,7 @@ const styles = StyleSheet.create({
     totalLabel: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
     totalValue: { fontSize: 22, fontWeight: '900', color: '#00b050' },
     // Footer
-    checkoutFooter: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 6, backgroundColor: '#ffffff' },
+    checkoutFooter: { paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#f1f5f9' },
     checkoutBtn: {
         backgroundColor: '#00b050', height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center',
         shadowColor: '#00b050', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,

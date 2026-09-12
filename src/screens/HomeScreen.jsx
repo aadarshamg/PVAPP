@@ -15,9 +15,12 @@ import {
 } from 'lucide-react-native';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useStore } from '../contexts/StoreContext';
+import { isStoreOpen } from '../utils/storeStatus';
+import { formatOrderNumber } from '../utils/storeCode';
 
 const { width } = Dimensions.get('window');
-const FEAT_W = width * 0.72;
+const FEAT_W = width - 80;
 
 const MINI_STAGES = ['placed', 'preparing', 'ready', 'out-for-delivery', 'delivered'];
 const normalizeStage = (s) => s === 'accepted' ? 'preparing' : s;
@@ -52,6 +55,13 @@ const getCatStyle = (name) => {
     ];
     return PALETTE[Math.abs(name?.charCodeAt(0) || 0) % PALETTE.length];
 };
+
+const getLowestPizzaPrice = (item) => Math.min(
+    item.base_price_small || Infinity,
+    item.base_price_medium || Infinity,
+    item.base_price_large || Infinity,
+    item.base_price_xlarge || Infinity
+);
 
 function AppLoadingScreen() {
     const pulse   = useRef(new Animated.Value(1)).current;
@@ -89,7 +99,7 @@ function AppLoadingScreen() {
 
     return (
         <View style={loadStyles.screen}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+            <StatusBar barStyle="light-content" />
 
             {/* Decorative circles */}
             <View style={[loadStyles.circle, { width: 300, height: 300, top: -80, right: -80, opacity: 0.12 }]} />
@@ -153,25 +163,84 @@ const loadStyles = StyleSheet.create({
 export default function HomeScreen({ navigation }) {
     const { cartCount } = useCart();
     const { user } = useAuth();
+    const { selectedStore, stores } = useStore();
     const [categories, setCategories] = useState([]);
     const [featured, setFeatured]     = useState([]);
+    const [banners, setBanners]       = useState([]);
     const [popular, setPopular]       = useState([]);
     const [loading, setLoading]       = useState(true);
     const [currentLocation, setCurrentLocation] = useState('Law Gate, LPU');
     const [kitchenOpen, setKitchenOpen] = useState(true);
+    const [minsToClose, setMinsToClose] = useState(null);
+    const [deliveryTime, setDeliveryTime] = useState('35');
+    const storeSettingsRef = useRef({ store_open: 'true', opening_time: '', closing_time: '' });
     const [activeOrder, setActiveOrder] = useState(null);
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    // Unique per-mount suffix so a fast remount never reuses a channel that's still tearing down
+    // (reusing a fixed channel name can hand back an already-subscribed instance, and calling
+    // .on() on that throws "cannot add postgres_changes callbacks ... after subscribe()")
+    const instanceId = useRef(Math.random().toString(36).slice(2)).current;
 
     useEffect(() => {
-        fetchKitchenStatus();
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, { toValue: 1.12, duration: 700, useNativeDriver: true }),
+                Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+            ])
+        ).start();
+    }, []);
+
+    const applyStoreSettings = useCallback((store_open, opening_time, closing_time) => {
+        const isOpen = isStoreOpen(store_open, opening_time, closing_time);
+        setKitchenOpen(isOpen);
+        if (!isOpen || !opening_time || !closing_time) { setMinsToClose(null); return; }
+        const now = new Date();
+        const [closeH, closeM] = closing_time.split(':').map(Number);
+        const nowMins = now.getHours() * 60 + now.getMinutes();
+        let closeMins = closeH * 60 + closeM;
+        if (closeMins <= nowMins) closeMins += 24 * 60; // closing time is after midnight, tomorrow
+        setMinsToClose(closeMins - nowMins);
+    }, []);
+
+    useEffect(() => {
+        if (!selectedStore?.id) return;
+
+        const fetchStoreSettings = async () => {
+            try {
+                const { data } = await supabase.from('store_settings').select('key, value')
+                    .eq('store_id', selectedStore.id)
+                    .in('key', ['store_open', 'opening_time', 'closing_time', 'delivery_time_minutes']);
+                const map = {};
+                data?.forEach(r => { map[r.key] = r.value; });
+                storeSettingsRef.current = { ...storeSettingsRef.current, ...map };
+                applyStoreSettings(map.store_open, map.opening_time, map.closing_time);
+                if (map.delivery_time_minutes) setDeliveryTime(map.delivery_time_minutes);
+            } catch { setKitchenOpen(true); }
+        };
+
+        fetchStoreSettings();
         fetchData();
+
+        const timer = setInterval(() => {
+            const s = storeSettingsRef.current;
+            applyStoreSettings(s.store_open, s.opening_time, s.closing_time);
+        }, 60000);
+
         const kitchenSub = supabase
-            .channel('kitchen-status-customer')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings' }, payload => {
-                if (payload.new?.key === 'kitchen_status') setKitchenOpen(payload.new?.value === 'open');
+            .channel(`kitchen-status-customer-${instanceId}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'store_settings', filter: `store_id=eq.${selectedStore.id}` }, payload => {
+                const key = payload.new?.key;
+                if (['store_open', 'opening_time', 'closing_time'].includes(key)) {
+                    storeSettingsRef.current = { ...storeSettingsRef.current, [key]: payload.new.value };
+                    const s = storeSettingsRef.current;
+                    applyStoreSettings(s.store_open, s.opening_time, s.closing_time);
+                }
+                if (key === 'delivery_time_minutes') setDeliveryTime(payload.new.value);
             })
             .subscribe();
-        return () => supabase.removeChannel(kitchenSub);
-    }, []);
+
+        return () => { supabase.removeChannel(kitchenSub); clearInterval(timer); };
+    }, [applyStoreSettings, selectedStore?.id]);
 
     const fetchActiveOrder = useCallback(async () => {
         if (!user) return;
@@ -191,7 +260,7 @@ export default function HomeScreen({ navigation }) {
     useEffect(() => {
         if (!user) return;
         fetchActiveOrder();
-        const sub = supabase.channel('home-active-order')
+        const sub = supabase.channel(`home-active-order-${instanceId}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
                 const o = payload.new;
                 if (o.customer_id !== user.id) return;
@@ -215,12 +284,6 @@ export default function HomeScreen({ navigation }) {
         return () => supabase.removeChannel(sub);
     }, [user]);
 
-    const fetchKitchenStatus = async () => {
-        try {
-            const { data } = await supabase.from('store_settings').select('value').eq('key', 'kitchen_status').single();
-            setKitchenOpen(data?.value === 'open');
-        } catch { setKitchenOpen(true); }
-    };
 
     useFocusEffect(useCallback(() => {
         const fetchLocation = async () => {
@@ -237,15 +300,21 @@ export default function HomeScreen({ navigation }) {
     }, []));
 
     const fetchData = async () => {
+        if (!selectedStore?.id) return;
         setLoading(true);
         try {
-            const [catRes, featRes, orderItemsRes] = await Promise.all([
-                supabase.from('categories').select('*').order('sort_order', { ascending: true }),
-                supabase.from('products').select('*, category:categories(name)').eq('is_featured', true).eq('is_available', true).limit(8),
+            const [catRes, featRes, orderItemsRes, bannersRes] = await Promise.all([
+                supabase.from('categories').select('*').eq('store_id', selectedStore.id).order('sort_order', { ascending: true }),
+                supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).eq('is_featured', true).eq('is_available', true).limit(8),
+                // order_items has no store_id of its own — harmless to leave business-wide, since the
+                // per-store product lookup below naturally drops any id that belongs to the other store.
                 supabase.from('order_items').select('product_id, quantity').order('created_at', { ascending: false }).limit(500),
+                // Banners are a shared, brand-wide marketing asset — not scoped per store.
+                supabase.from('banners').select('*').eq('is_active', true).order('sort_order', { ascending: true }),
             ]);
             if (catRes.data) setCategories(catRes.data);
             if (featRes.data) setFeatured(featRes.data);
+            if (bannersRes.data) setBanners(bannersRes.data);
 
             let popData = [];
             if (orderItemsRes.data?.length > 0) {
@@ -253,12 +322,12 @@ export default function HomeScreen({ navigation }) {
                 orderItemsRes.data.forEach(item => { counts[item.product_id] = (counts[item.product_id] || 0) + item.quantity; });
                 const topIds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 6);
                 if (topIds.length > 0) {
-                    const { data } = await supabase.from('products').select('*, category:categories(name)').in('id', topIds).eq('is_available', true);
+                    const { data } = await supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).in('id', topIds).eq('is_available', true);
                     if (data) popData = data.sort((a, b) => counts[b.id] - counts[a.id]);
                 }
             }
             if (popData.length === 0) {
-                const { data } = await supabase.from('products').select('*, category:categories(name)').eq('is_available', true).order('created_at', { ascending: false }).limit(6);
+                const { data } = await supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).eq('is_available', true).order('created_at', { ascending: false }).limit(6);
                 if (data) popData = data;
             }
             setPopular(popData);
@@ -268,16 +337,9 @@ export default function HomeScreen({ navigation }) {
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+            <StatusBar barStyle="light-content" />
 
-            {!kitchenOpen && (
-                <View style={styles.closedBanner}>
-                    <AlertCircle color="#991b1b" size={15} />
-                    <Text style={styles.closedText}>Kitchen is closed — Orders on hold</Text>
-                </View>
-            )}
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: activeOrder ? 130 : 40 }}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: activeOrder ? 130 : 24 }}>
 
                 {/* ── Header ── */}
                 <View style={styles.header}>
@@ -291,15 +353,16 @@ export default function HomeScreen({ navigation }) {
                                 <Text style={styles.brandName}>PIZZA VIRUS</Text>
                                 <Text style={styles.brandTagline}>Hunger is a Deadly Virus</Text>
                             </View>
-                            {/* Cart button */}
-                            <TouchableOpacity style={styles.cartBtn} onPress={() => navigation.navigate('Cart')} activeOpacity={0.85}>
-                                <ShoppingCart color="#22973a" size={22} strokeWidth={2.5} />
-                                {cartCount > 0 && (
-                                    <View style={styles.cartBadge}>
-                                        <Text style={styles.cartBadgeText}>{cartCount}</Text>
+                            {/* Delivery time pill */}
+                            {kitchenOpen && (
+                                <View style={styles.headerDeliveryPill}>
+                                    <Text style={styles.headerDeliveryEmoji}>⚡</Text>
+                                    <View>
+                                        <Text style={styles.headerDeliveryMin}>{deliveryTime} min</Text>
+                                        <Text style={styles.headerDeliveryLabel}>delivery</Text>
                                     </View>
-                                )}
-                            </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
 
                         {/* Delivering to row */}
@@ -311,16 +374,61 @@ export default function HomeScreen({ navigation }) {
                     </SafeAreaView>
                 </View>
 
+                {/* ── Store Closed Banner ── */}
+                {!kitchenOpen && (
+                    <View style={styles.closedBanner}>
+                        <AlertCircle color="#991b1b" size={15} />
+                        <Text style={styles.closedText}>Store is closed — We'll be back soon</Text>
+                    </View>
+                )}
+
+                {/* ── Closing Soon Banner ── */}
+                {kitchenOpen && minsToClose !== null && minsToClose <= 15 && (
+                    <View style={styles.closingSoonBanner}>
+                        <AlertCircle color="#92400e" size={15} />
+                        <Text style={styles.closingSoonText}>
+                            Closing in {minsToClose} min — Place your order now!
+                        </Text>
+                    </View>
+                )}
+
+
+
+                {/* ── Promo Banners ── */}
+                {banners.length > 0 && (
+                    <View style={{ marginTop: 16 }}>
+                        <FlatList
+                            data={banners}
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            keyExtractor={b => b.id}
+                            contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
+                            snapToInterval={width - 32 + 12}
+                            decelerationRate="fast"
+                            renderItem={({ item: b }) => (
+                                <View style={styles.bannerCard}>
+                                    <Image source={{ uri: b.image_url }} style={styles.bannerImg} />
+                                    {(b.title || b.subtitle) && (
+                                        <View style={styles.bannerOverlay}>
+                                            {b.title ? <Text style={styles.bannerTitle}>{b.title}</Text> : null}
+                                            {b.subtitle ? <Text style={styles.bannerSubtitle}>{b.subtitle}</Text> : null}
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+                        />
+                    </View>
+                )}
+
                 {/* ── Featured Pizzas ── */}
                 {featured.length > 0 && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>🔥 Featured Pizzas</Text>
+                    <View style={{ marginTop: 16 }}>
                         <FlatList
                             data={featured}
                             horizontal
                             showsHorizontalScrollIndicator={false}
                             keyExtractor={item => item.id}
-                            contentContainerStyle={{ paddingLeft: 20, paddingRight: 8, paddingTop: 16 }}
+                            contentContainerStyle={{ paddingHorizontal: 16 }}
                             snapToInterval={FEAT_W + 16}
                             decelerationRate="fast"
                             renderItem={({ item }) => (
@@ -329,22 +437,18 @@ export default function HomeScreen({ navigation }) {
                                     onPress={() => navigation.navigate('ProductDetail', { product: item })}
                                     activeOpacity={0.93}
                                 >
-                                    {/* Image */}
-                                    <View style={styles.featImgWrap}>
-                                        {item.image_url
-                                            ? <Image source={{ uri: item.image_url }} style={styles.featImg} />
-                                            : <View style={styles.featImgPlaceholder}><Text style={{ fontSize: 64 }}>🍕</Text></View>
-                                        }
-                                        <View style={styles.featBadge}>
-                                            <Text style={styles.featBadgeText}>FEATURED</Text>
-                                        </View>
+                                    {item.image_url
+                                        ? <Image source={{ uri: item.image_url }} style={styles.featImg} />
+                                        : <View style={styles.featImgPlaceholder}><Text style={{ fontSize: 72 }}>🍽️</Text></View>
+                                    }
+                                    <View style={styles.featBadge}>
+                                        <Text style={styles.featBadgeText}>FEATURED</Text>
                                     </View>
-                                    {/* Orange info */}
-                                    <View style={styles.featInfo}>
+                                    <View style={styles.featOverlay}>
                                         <Text style={styles.featName} numberOfLines={1}>{item.name}</Text>
                                         <Text style={styles.featDesc} numberOfLines={1}>{item.description || 'Freshly baked pizza'}</Text>
                                         <View style={styles.featFooter}>
-                                            <Text style={styles.featPrice}>₹{item.base_price_small}</Text>
+                                            <Text style={styles.featPrice}>₹{getLowestPizzaPrice(item)}</Text>
                                             <TouchableOpacity
                                                 style={styles.featAddBtn}
                                                 onPress={() => navigation.navigate('ProductDetail', { product: item })}
@@ -379,10 +483,15 @@ export default function HomeScreen({ navigation }) {
                                         onPress={() => navigation.navigate('Menu', { categoryId: cat.id })}
                                         activeOpacity={0.85}
                                     >
-                                        <View style={[styles.catCircle, { backgroundColor: bg }]}>
-                                            <Icon size={26} color="#fff" strokeWidth={2} />
+                                        {cat.image_url
+                                            ? <Image source={{ uri: cat.image_url }} style={styles.catImg} />
+                                            : <View style={[styles.catImgFallback, { backgroundColor: bg }]}>
+                                                <Icon size={28} color="#fff" strokeWidth={2} />
+                                              </View>
+                                        }
+                                        <View style={styles.catOverlay}>
+                                            <Text style={styles.catName} numberOfLines={2}>{cat.name}</Text>
                                         </View>
-                                        <Text style={styles.catName} numberOfLines={2}>{cat.name}</Text>
                                     </TouchableOpacity>
                                 );
                             })}
@@ -432,7 +541,7 @@ export default function HomeScreen({ navigation }) {
                                     <View style={styles.popularImgWrap}>
                                         {item.image_url
                                             ? <Image source={{ uri: item.image_url }} style={styles.popularImg} />
-                                            : <View style={styles.popularImgPlaceholder}><Text style={{ fontSize: 36 }}>🍕</Text></View>
+                                            : <View style={styles.popularImgPlaceholder}><Text style={{ fontSize: 36 }}>🍽️</Text></View>
                                         }
                                         {/* White circle veg indicator */}
                                         <View style={styles.popularVegDotOuter}>
@@ -443,7 +552,7 @@ export default function HomeScreen({ navigation }) {
                                         <Text style={styles.popularName} numberOfLines={2}>{item.name}</Text>
                                         <Text style={styles.popularDesc} numberOfLines={1}>{item.description || 'Freshly baked'}</Text>
                                         <View style={styles.popularFooter}>
-                                            <Text style={styles.popularPrice}>₹{item.base_price_small}</Text>
+                                            <Text style={styles.popularPrice}>₹{getLowestPizzaPrice(item)}</Text>
                                             <TouchableOpacity
                                                 style={styles.popularAddBtn}
                                                 onPress={() => navigation.navigate('ProductDetail', { product: item })}
@@ -466,10 +575,12 @@ export default function HomeScreen({ navigation }) {
                 <AppLoadingScreen />
             </Modal>
 
+
             {/* ── Active order banner ── */}
             {activeOrder && (() => {
                 const meta = ORDER_STATUS_META[activeOrder.status] || ORDER_STATUS_META.placed;
                 const currentIdx = getMiniStageIdx(activeOrder.status);
+                const orderStore = stores.find(s => s.id === activeOrder.store_id);
                 return (
                     <TouchableOpacity
                         style={styles.orderBanner}
@@ -479,7 +590,7 @@ export default function HomeScreen({ navigation }) {
                         <View style={styles.bannerContent}>
                             <View style={styles.bannerTopRow}>
                                 <View style={[styles.bannerPulse, { backgroundColor: meta.color }]} />
-                                <Text style={styles.bannerOrderId}>Order #{activeOrder.display_id}</Text>
+                                <Text style={styles.bannerOrderId}>Order #{formatOrderNumber(orderStore?.slug, activeOrder.display_id)}</Text>
                                 <Text style={[styles.bannerStatusLabel, { color: meta.color }]}>
                                     {meta.emoji} {meta.label}
                                 </Text>
@@ -553,12 +664,52 @@ const styles = StyleSheet.create({
     locationLabel: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
     locationValue: { fontSize: 13, color: '#fff', fontWeight: '800', flex: 1 },
 
+    // ── Header Delivery Pill ──
+    headerDeliveryPill: {
+        backgroundColor: 'rgba(255,255,255,0.18)',
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    headerDeliveryEmoji: { fontSize: 16 },
+    headerDeliveryMin: { fontSize: 14, fontWeight: '900', color: '#fff', lineHeight: 17 },
+    headerDeliveryLabel: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.78)', letterSpacing: 0.4 },
+
+    // ── Delivery Time Banner ──
+    deliveryBanner: {
+        marginHorizontal: 16, marginTop: 14, marginBottom: 4,
+        backgroundColor: '#1a1a2e',
+        borderRadius: 18,
+        paddingHorizontal: 18, paddingVertical: 14,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 5,
+    },
+    deliveryBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    deliveryBannerEmoji: { fontSize: 28 },
+    deliveryBannerSub: { fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: '600' },
+    deliveryBannerTime: { fontSize: 20, fontWeight: '900', color: '#fff', marginTop: 1 },
+    deliveryBannerBadge: {
+        backgroundColor: '#FF6B00',
+        borderRadius: 12, paddingHorizontal: 12, paddingVertical: 7,
+    },
+    deliveryBannerBadgeText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+
     // ── Closed banner ──
     closedBanner: {
         backgroundColor: '#fee2e2', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
         paddingVertical: 9, paddingHorizontal: 20, gap: 8,
     },
     closedText: { fontSize: 13, color: '#991b1b', fontWeight: '700' },
+    closingSoonBanner: {
+        backgroundColor: '#fef3c7', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        paddingVertical: 9, paddingHorizontal: 20, gap: 8,
+    },
+    closingSoonText: { fontSize: 13, color: '#92400e', fontWeight: '700' },
 
     // ── Section ──
     section: { paddingHorizontal: 20, marginTop: 24 },
@@ -566,53 +717,85 @@ const styles = StyleSheet.create({
     sectionTitle: { fontSize: 19, fontWeight: '900', color: '#111827' },
     seeAll: { fontSize: 13, fontWeight: '700', color: '#22973a' },
 
+    // ── Promo Banners ──
+    bannerCard: {
+        width: width - 32,
+        height: 160,
+        borderRadius: 20,
+        overflow: 'hidden',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 6,
+    },
+    bannerImg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', resizeMode: 'cover' },
+    bannerOverlay: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        paddingHorizontal: 16, paddingVertical: 12,
+    },
+    bannerTitle: { fontSize: 17, fontWeight: '900', color: '#fff' },
+    bannerSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.82)', marginTop: 2 },
+
     // ── Featured Cards ──
     featCard: {
         width: FEAT_W,
-        backgroundColor: '#fff',
-        borderRadius: 20,
+        height: 300,
+        borderRadius: 22,
         overflow: 'hidden',
         marginRight: 16,
-        shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 6,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 18, elevation: 10,
     },
-    featImgWrap: { width: '100%', height: 180, backgroundColor: '#f3feb0', position: 'relative' },
-    featImg: { width: '100%', height: '100%', resizeMode: 'cover' },
-    featImgPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3feb0' },
+    featImg: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        width: '100%', height: '100%', resizeMode: 'cover',
+    },
+    featImgPlaceholder: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        justifyContent: 'center', alignItems: 'center', backgroundColor: '#1c2a1e',
+    },
     featBadge: {
-        position: 'absolute', top: 12, left: 12,
-        backgroundColor: '#22973a', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+        position: 'absolute', top: 14, left: 14,
+        backgroundColor: '#22973a',
+        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
     },
-    featBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-    featInfo: {
-        backgroundColor: '#f97316',
-        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 16,
+    featBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+    featOverlay: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        backgroundColor: 'rgba(0,0,0,0.60)',
+        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 18,
     },
-    featName: { fontSize: 18, fontWeight: '900', color: '#fff', marginBottom: 4 },
-    featDesc: { fontSize: 12, color: 'rgba(255,255,255,0.85)', lineHeight: 17, marginBottom: 14 },
+    featName: { fontSize: 18, fontWeight: '900', color: '#fff', marginBottom: 3 },
+    featDesc: { fontSize: 12, color: 'rgba(255,255,255,0.72)', lineHeight: 17, marginBottom: 12 },
     featFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     featPrice: { fontSize: 24, fontWeight: '900', color: '#fff' },
     featAddBtn: {
-        backgroundColor: '#fff',
-        paddingHorizontal: 24, paddingVertical: 10,
-        borderRadius: 24,
+        backgroundColor: '#22973a',
+        paddingHorizontal: 22, paddingVertical: 9,
+        borderRadius: 22,
     },
-    featAddBtnText: { color: '#22973a', fontSize: 14, fontWeight: '900' },
+    featAddBtnText: { color: '#fff', fontSize: 13, fontWeight: '900' },
 
-    // ── Categories ── white card containing colored circle
-    catScroll: { gap: 14, paddingRight: 8, paddingBottom: 8, paddingTop: 4 },
+    // ── Categories ── image card
+    catScroll: { gap: 12, paddingRight: 8, paddingBottom: 8, paddingTop: 4 },
     catCard: {
-        width: 90,
-        backgroundColor: '#fff',
+        width: 88,
+        height: 104,
         borderRadius: 18,
-        paddingVertical: 16, paddingHorizontal: 8,
-        alignItems: 'center',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+        overflow: 'hidden',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.14, shadowRadius: 10, elevation: 5,
     },
-    catCircle: {
-        width: 58, height: 58, borderRadius: 29,
-        justifyContent: 'center', alignItems: 'center', marginBottom: 10,
+    catImg: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        width: '100%', height: '100%', resizeMode: 'cover',
     },
-    catName: { fontSize: 12, fontWeight: '700', color: '#111827', textAlign: 'center', lineHeight: 16 },
+    catImgFallback: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        justifyContent: 'center', alignItems: 'center',
+    },
+    catOverlay: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 6, paddingVertical: 7,
+    },
+    catName: { fontSize: 11, fontWeight: '800', color: '#fff', textAlign: 'center', lineHeight: 14 },
 
     // ── Quick Actions ──
     quickRow: { flexDirection: 'row', gap: 10, marginTop: 14 },

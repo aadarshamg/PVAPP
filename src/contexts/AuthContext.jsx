@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { makeRedirectUri } from 'expo-auth-session';
 
@@ -11,6 +11,20 @@ if (Platform.OS !== 'web') {
 }
 
 const AuthContext = createContext({});
+
+// Safety net for the DB trigger that's supposed to create a profiles row on
+// signup — orders.customer_id references profiles(id), so if that row is
+// ever missing (trigger disabled/misconfigured), checkout fails with a
+// foreign key violation. ignoreDuplicates means this is a no-op for users
+// who already have a profile, and never touches their existing role/name.
+const ensureProfile = async (user) => {
+    if (!user) return;
+    const { error } = await supabase.from('profiles').upsert(
+        { id: user.id, name: user.user_metadata?.name || 'New Customer' },
+        { onConflict: 'id', ignoreDuplicates: true }
+    );
+    if (error) console.warn('ensureProfile failed:', error.message);
+};
 
 // Helper to extract params from URL hash or query string
 const extractParamsFromUrl = (url) => {
@@ -29,6 +43,7 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [session, setSession] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [recoveryMode, setRecoveryMode] = useState(false);
 
     useEffect(() => {
         // Get initial session
@@ -36,13 +51,15 @@ export const AuthProvider = ({ children }) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
+            if (session?.user) ensureProfile(session.user);
         });
 
         // Listen for auth state changes (handles web OAuth redirect automatically)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
+            if (event === 'SIGNED_IN' && session?.user) ensureProfile(session.user);
         });
 
         // On web, check URL hash for tokens on page load (after OAuth redirect)
@@ -65,6 +82,26 @@ export const AuthProvider = ({ children }) => {
         return () => subscription?.unsubscribe();
     }, []);
 
+    // Mobile deep link handling for the password-recovery email link (pizzavirus://reset-password#...)
+    useEffect(() => {
+        if (Platform.OS === 'web') return;
+
+        const handleUrl = (url) => {
+            if (!url || !url.includes('reset-password')) return;
+            const params = extractParamsFromUrl(url);
+            if (params.access_token && params.refresh_token) {
+                supabase.auth.setSession({
+                    access_token: params.access_token,
+                    refresh_token: params.refresh_token,
+                }).then(() => setRecoveryMode(true));
+            }
+        };
+
+        Linking.getInitialURL().then(url => handleUrl(url));
+        const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+        return () => subscription.remove();
+    }, []);
+
     // Email/Password Sign In
     const signInWithEmail = async (email, password) => {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -72,7 +109,7 @@ export const AuthProvider = ({ children }) => {
         return data;
     };
 
-    // Email/Password Sign Up
+    // Email/Password Sign Up — triggers a signup-confirmation OTP email
     const signUp = async (email, password, name) => {
         const { data, error } = await supabase.auth.signUp({
             email, password,
@@ -80,6 +117,19 @@ export const AuthProvider = ({ children }) => {
         });
         if (error) throw error;
         return data;
+    };
+
+    // Verify the OTP code sent to the user's email after sign up
+    const verifySignUpOtp = async (email, token) => {
+        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
+        if (error) throw error;
+        return data;
+    };
+
+    // Resend the signup OTP code
+    const resendSignUpOtp = async (email) => {
+        const { error } = await supabase.auth.resend({ type: 'signup', email });
+        if (error) throw error;
     };
 
     // Google Sign In
@@ -165,14 +215,33 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Apple Sign In failed - no identity token');
     };
 
-    const signOut = () => supabase.auth.signOut();
+    const signOut = () => {
+        setRecoveryMode(false);
+        return supabase.auth.signOut();
+    };
+
+    // Send a password-reset email that deep-links back into the app
+    const resetPasswordForEmail = async (email) => {
+        const redirectUrl = makeRedirectUri({ scheme: 'pizzavirus', path: 'reset-password' });
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
+        if (error) throw error;
+    };
+
+    // Set a new password while in recovery mode (or for a signed-in user)
+    const updatePassword = async (newPassword) => {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+        setRecoveryMode(false);
+    };
 
     return (
         <AuthContext.Provider value={{
             user, session,
             signInWithEmail, signUp,
+            verifySignUpOtp, resendSignUpOtp,
             signInWithGoogle, signInWithApple,
-            signOut, loading
+            signOut, loading,
+            recoveryMode, resetPasswordForEmail, updatePassword,
         }}>
             {!loading && children}
         </AuthContext.Provider>

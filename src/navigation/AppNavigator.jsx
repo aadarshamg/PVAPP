@@ -17,16 +17,20 @@ import SupportScreen from '../screens/SupportScreen';
 import AboutScreen from '../screens/AboutScreen';
 import LegalScreen from '../screens/LegalScreen';
 import OrderSuccessScreen from '../screens/OrderSuccessScreen';
+import OrderDetailScreen from '../screens/OrderDetailScreen';
 import DeliveryZoneCheckScreen from '../screens/DeliveryZoneCheckScreen';
+import StoreSelectScreen from '../screens/StoreSelectScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 import { Home, ClipboardList, ShoppingCart, User } from 'lucide-react-native';
+import { useCart } from '../contexts/CartContext';
 
 function TabIcon({ label, focused }) {
+    const { cartCount } = useCart();
     const iconColor = focused ? '#48d23c' : '#9CA3AF';
     const iconSize = 24;
-    
+
     const getIcon = () => {
         switch (label) {
             case 'Home': return <Home color={iconColor} size={iconSize} />;
@@ -39,7 +43,14 @@ function TabIcon({ label, focused }) {
 
     return (
         <View style={styles.tabIconContainer}>
-            {getIcon()}
+            <View style={styles.tabIconWrap}>
+                {getIcon()}
+                {label === 'Cart' && cartCount > 0 && (
+                    <View style={styles.tabCartBadge}>
+                        <Text style={styles.tabCartBadgeText}>{cartCount}</Text>
+                    </View>
+                )}
+            </View>
             <Text style={[styles.tabLabel, focused && styles.tabLabelActive]} numberOfLines={1}>{label}</Text>
         </View>
     );
@@ -70,6 +81,7 @@ function HomeTabs() {
 export default function AppNavigator() {
     return (
         <Stack.Navigator screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="StoreSelect" component={StoreSelectScreen} />
             <Stack.Screen name="ZoneCheck" component={DeliveryZoneCheckScreen} />
             <Stack.Screen name="MainTabs" component={HomeTabs} />
             <Stack.Screen name="Menu" component={MenuScreen} />
@@ -84,6 +96,7 @@ export default function AppNavigator() {
             <Stack.Screen name="About" component={AboutScreen} />
             <Stack.Screen name="Legal" component={LegalScreen} />
             <Stack.Screen name="OrderSuccess" component={OrderSuccessScreen} options={{ gestureEnabled: false }} />
+            <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
         </Stack.Navigator>
     );
 }
@@ -107,6 +120,16 @@ const styles = StyleSheet.create({
         paddingTop: 8,
         width: 70,
     },
+    tabIconWrap: {
+        position: 'relative',
+    },
+    tabCartBadge: {
+        position: 'absolute', top: -4, right: -8,
+        backgroundColor: '#ef4444', minWidth: 18, height: 18, borderRadius: 9,
+        justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff',
+        paddingHorizontal: 2,
+    },
+    tabCartBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900' },
     tabLabel: {
         fontSize: 11,
         fontWeight: '600',

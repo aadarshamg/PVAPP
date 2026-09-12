@@ -10,14 +10,18 @@ export default function SupportScreen({ navigation }) {
     };
 
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+        <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+            <StatusBar barStyle="light-content" />
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft color="#fff" size={24} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Help & Support</Text>
-                <View style={{ width: 40 }} />
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                            <ArrowLeft color="#fff" size={24} />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Help & Support</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                </SafeAreaView>
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
@@ -54,7 +58,10 @@ export default function SupportScreen({ navigation }) {
 const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: '#f8fafc' },
     header: {
-        backgroundColor: '#22973a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: '#22973a',
+    },
+    headerRow: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 20, height: 60,
     },
     backBtn: {

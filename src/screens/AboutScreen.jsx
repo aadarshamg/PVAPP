@@ -1,20 +1,24 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, ShieldCheck, FileText, RefreshCw, Mail } from 'lucide-react-native';
+import { ArrowLeft, ShieldCheck, FileText, RefreshCw, Truck, Mail } from 'lucide-react-native';
 
 const LOGO = require('../../assets/images/logo.png');
 
 export default function AboutScreen({ navigation }) {
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+        <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+            <StatusBar barStyle="light-content" />
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft color="#fff" size={24} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>About</Text>
-                <View style={{ width: 40 }} />
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                            <ArrowLeft color="#fff" size={24} />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>About</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                </SafeAreaView>
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
@@ -23,7 +27,7 @@ export default function AboutScreen({ navigation }) {
                         <Image source={LOGO} style={styles.logoImg} />
                     </View>
                     <Text style={styles.appName}>Pizza Virus</Text>
-                    <Text style={styles.version}>Version 1.0.0</Text>
+                    <Text style={styles.version}>Version 2.0.1</Text>
                     <TouchableOpacity onPress={() => Linking.openURL('https://www.falqonstudio.com')}>
                         <Text style={styles.devBy}>Developed by <Text style={styles.devByLink}>Falqon Studio</Text></Text>
                     </TouchableOpacity>
@@ -60,6 +64,16 @@ export default function AboutScreen({ navigation }) {
 
                     <View style={styles.divider} />
 
+                    <TouchableOpacity style={styles.linkItem} onPress={() => navigation.navigate('Legal', { section: 'shipping' })}>
+                        <View style={styles.linkLeft}>
+                            <Truck size={20} color="#475569" />
+                            <Text style={styles.linkText}>Shipping Policy</Text>
+                        </View>
+                        <Text style={styles.linkArrow}>›</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.divider} />
+
                     <TouchableOpacity style={styles.linkItem} onPress={() => navigation.navigate('Legal', { section: 'contact' })}>
                         <View style={styles.linkLeft}>
                             <Mail size={20} color="#475569" />
@@ -81,7 +95,10 @@ export default function AboutScreen({ navigation }) {
 const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: '#f8fafc' },
     header: {
-        backgroundColor: '#22973a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: '#22973a',
+    },
+    headerRow: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 20, height: 60,
     },
     backBtn: {

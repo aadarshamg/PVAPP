@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, TextInput, Alert, Modal, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, MapPin, Plus, MapPinOff, Home, Briefcase, Globe, X, Navigation } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Plus, MapPinOff, Home, Briefcase, Globe, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Isolated modal component — its own state never re-renders the parent list ──
@@ -179,14 +179,18 @@ export default function SavedAddressesScreen({ navigation }) {
     };
 
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+        <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+            <StatusBar barStyle="light-content" />
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft color="#fff" size={24} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Saved Addresses</Text>
-                <View style={{ width: 40 }} />
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                            <ArrowLeft color="#fff" size={24} />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Saved Addresses</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                </SafeAreaView>
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
@@ -214,14 +218,6 @@ export default function SavedAddressesScreen({ navigation }) {
                                     )}
                                 </View>
                                 <Text style={styles.addressText} numberOfLines={3}>{addr.address}</Text>
-                                <TouchableOpacity
-                                    style={styles.relocateBtn}
-                                    onPress={() => navigation.navigate('MapPicker', { addressId: addr.id, title: addr.title })}
-                                    activeOpacity={0.7}
-                                >
-                                    <Navigation size={12} color="#3b82f6" />
-                                    <Text style={styles.relocateBtnText}>Relocate on Map</Text>
-                                </TouchableOpacity>
                             </View>
                             <TouchableOpacity onPress={() => deleteAddress(addr.id)} style={styles.deleteBtn}>
                                 <X size={16} color="#ef4444" />
@@ -252,7 +248,10 @@ const styles = StyleSheet.create({
     emptyTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginTop: 16 },
     emptySub: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8 },
     header: {
-        backgroundColor: '#22973a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: '#22973a',
+    },
+    headerRow: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: 20, height: 60,
     },
     backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 },
@@ -278,8 +277,6 @@ const styles = StyleSheet.create({
     badgeText: { fontSize: 10, fontWeight: '700', color: '#475569', textTransform: 'uppercase' },
     addressText: { fontSize: 13, color: '#64748b', lineHeight: 20 },
     deleteBtn: { position: 'absolute', right: 16, top: 16, padding: 4, backgroundColor: '#fee2e2', borderRadius: 10 },
-    relocateBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, alignSelf: 'flex-start', backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: '#bfdbfe' },
-    relocateBtnText: { fontSize: 12, fontWeight: '700', color: '#3b82f6' },
     // Modal styles
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 48 },

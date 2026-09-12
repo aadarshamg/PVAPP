@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pizza Virus",
     "slug": "customer-app",
-    "version": "1.0.0",
+    "version": "2.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "pizzavirus",
@@ -16,12 +16,10 @@
         "foregroundImage": "./assets/images/logo.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
       "package": "com.cloudpakasala.pizzavirus"
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -44,14 +42,14 @@
           "android": {
             "extraMavenRepos": [
               "https://phonepe.mycloudrepo.io/public/repositories/phonepe-intentsdk-android"
-            ]
+            ],
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
-    "experiments": {
-      "reactCompiler": true
-    },
     "extra": {
       "eas": {
         "projectId": "d3a70d92-9f2b-476e-9b36-bfc4893b5343"

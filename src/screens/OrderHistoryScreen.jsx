@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
     ScrollView, StatusBar, ActivityIndicator, Alert
@@ -7,6 +7,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, PackageMinus, CheckCircle, ChefHat, Truck } from 'lucide-react-native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useCart } from '../contexts/CartContext';
+import { useStore } from '../contexts/StoreContext';
+import { formatOrderNumber } from '../utils/storeCode';
 
 const TAB_FILTERS = [
     { key: 'all',       label: 'All Orders' },
@@ -46,16 +49,19 @@ const formatDate = (iso) =>
 
 export default function OrderHistoryScreen({ navigation }) {
     const { user } = useAuth();
+    const { stores } = useStore();
     const [orders, setOrders]     = useState([]);
     const [loading, setLoading]   = useState(true);
     const [activeTab, setActiveTab] = useState('all');
+    // Unique per-mount suffix so a fast remount never reuses a channel that's still tearing down
+    const instanceId = useRef(Math.random().toString(36).slice(2)).current;
 
     useEffect(() => {
         if (!user) return;
         fetchOrders();
 
         const sub = supabase
-            .channel('customer-orders-v2')
+            .channel(`customer-orders-v2-${instanceId}`)
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
                 const updated = payload.new;
                 setOrders(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o));
@@ -95,33 +101,35 @@ export default function OrderHistoryScreen({ navigation }) {
     const totalSpent = filteredOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+        <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+            <StatusBar barStyle="light-content" />
 
             {/* Header with tabs inside */}
             <View style={styles.header}>
-                <View style={styles.headerRow}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                        <ArrowLeft color="#fff" size={22} />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Order History</Text>
-                    <View style={{ width: 40 }} />
-                </View>
-
-                <View style={styles.tabBar}>
-                    {TAB_FILTERS.map(tab => (
-                        <TouchableOpacity
-                            key={tab.key}
-                            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-                            onPress={() => setActiveTab(tab.key)}
-                            activeOpacity={0.8}
-                        >
-                            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-                                {tab.label}
-                            </Text>
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                            <ArrowLeft color="#fff" size={22} />
                         </TouchableOpacity>
-                    ))}
-                </View>
+                        <Text style={styles.headerTitle}>Order History</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+
+                    <View style={styles.tabBar}>
+                        {TAB_FILTERS.map(tab => (
+                            <TouchableOpacity
+                                key={tab.key}
+                                style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+                                onPress={() => setActiveTab(tab.key)}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                                    {tab.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </SafeAreaView>
             </View>
 
             {loading ? (
@@ -138,8 +146,8 @@ export default function OrderHistoryScreen({ navigation }) {
                 <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
                     {filteredOrders.map(order => (
                         isActive(order)
-                            ? <ActiveOrderCard key={order.id} order={order} navigation={navigation} />
-                            : <PastOrderCard   key={order.id} order={order} navigation={navigation} />
+                            ? <ActiveOrderCard key={order.id} order={order} navigation={navigation} stores={stores} />
+                            : <PastOrderCard   key={order.id} order={order} navigation={navigation} stores={stores} />
                     ))}
 
                     {/* Bottom Summary Card */}
@@ -161,16 +169,17 @@ export default function OrderHistoryScreen({ navigation }) {
     );
 }
 
-function ActiveOrderCard({ order, navigation }) {
+function ActiveOrderCard({ order, navigation, stores }) {
     const norm = normalizeStatus(order.status);
     const currentIdx = STAGES_ACTIVE.findIndex(s => s.key === norm);
+    const orderNumber = formatOrderNumber(stores.find(s => s.id === order.store_id)?.slug, order.display_id);
 
     return (
         <View style={styles.orderCard}>
             {/* Top row */}
             <View style={styles.cardTopRow}>
                 <View style={styles.cardTopLeft}>
-                    <Text style={styles.orderId}>{order.display_id}</Text>
+                    <Text style={styles.orderId}>{orderNumber}</Text>
                     <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[order.status] || STATUS_COLORS.placed).bg }]}>
                         <CheckCircle size={11} color={(STATUS_COLORS[order.status] || STATUS_COLORS.placed).text} />
                         <Text style={[styles.statusText, { color: (STATUS_COLORS[order.status] || STATUS_COLORS.placed).text }]}>
@@ -211,7 +220,11 @@ function ActiveOrderCard({ order, navigation }) {
 
             {/* Buttons */}
             <View style={styles.btnRow}>
-                <TouchableOpacity style={styles.viewBtn} activeOpacity={0.8}>
+                <TouchableOpacity
+                    style={styles.viewBtn}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate('OrderDetail', { order })}
+                >
                     <Text style={styles.viewBtnText}>View Details</Text>
                 </TouchableOpacity>
             </View>
@@ -219,16 +232,39 @@ function ActiveOrderCard({ order, navigation }) {
     );
 }
 
-function PastOrderCard({ order, navigation }) {
+function PastOrderCard({ order, navigation, stores }) {
     const colors = STATUS_COLORS[order.status] || STATUS_COLORS.delivered;
     const delivered = order.status === 'delivered';
+    const orderNumber = formatOrderNumber(stores.find(s => s.id === order.store_id)?.slug, order.display_id);
+    const { addRawItems } = useCart();
+
+    const handleReorder = () => {
+        // Sides & Drinks (product_id null) aren't reorderable here — only pizza/menu items
+        const items = (order.order_items || []).filter(i => i.product_id);
+        if (items.length === 0) {
+            Alert.alert('Unable to Reorder', 'No reorderable items were found in this order.');
+            return;
+        }
+        addRawItems(items.map(item => ({
+            product: { id: item.product_id, name: item.product_name },
+            size: { label: item.size },
+            crust: item.crust_name ? { name: item.crust_name } : null,
+            toppings: item.toppings_text ? item.toppings_text.split(', ').map(name => ({ name })) : [],
+            cheese: item.cheese_name ? { name: item.cheese_name } : null,
+            dips: item.dips_text ? item.dips_text.split(', ').map(name => ({ name })) : [],
+            instructions: item.instructions || '',
+            qty: item.quantity,
+            unitPrice: Number(item.price),
+        })));
+        navigation.navigate('Cart');
+    };
 
     return (
         <View style={styles.orderCard}>
             {/* Top row */}
             <View style={styles.cardTopRow}>
                 <View style={styles.cardTopLeft}>
-                    <Text style={styles.orderId}>{order.display_id}</Text>
+                    <Text style={styles.orderId}>{orderNumber}</Text>
                     <View style={[styles.statusBadge, { backgroundColor: colors.bg }]}>
                         {delivered && <CheckCircle size={11} color={colors.text} />}
                         <Text style={[styles.statusText, { color: colors.text }]}>
@@ -253,13 +289,17 @@ function PastOrderCard({ order, navigation }) {
 
             {/* Buttons */}
             <View style={styles.btnRow}>
-                <TouchableOpacity style={styles.viewBtn} activeOpacity={0.8}>
+                <TouchableOpacity
+                    style={styles.viewBtn}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate('OrderDetail', { order })}
+                >
                     <Text style={styles.viewBtnText}>View Details</Text>
                 </TouchableOpacity>
                 {delivered && (
                     <TouchableOpacity
                         style={styles.reorderBtn}
-                        onPress={() => navigation.navigate('Menu')}
+                        onPress={handleReorder}
                         activeOpacity={0.85}
                     >
                         <Text style={styles.reorderBtnText}>Reorder</Text>

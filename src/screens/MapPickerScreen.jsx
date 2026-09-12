@@ -14,9 +14,6 @@ export default function MapPickerScreen({ navigation, route }) {
     const [loading, setLoading] = useState(false);
     const [saveLoading, setSaveLoading] = useState(false);
 
-    const addressId = route.params?.addressId || null;
-    const isRelocating = !!addressId;
-
     const getGPSLocation = async () => {
         setLoading(true);
         try {
@@ -52,33 +49,18 @@ export default function MapPickerScreen({ navigation, route }) {
             const stored = await AsyncStorage.getItem('@pizza_addresses');
             const addressList = stored ? JSON.parse(stored) : [];
 
-            if (isRelocating) {
-                const updatedList = addressList.map(a =>
-                    a.id.toString() === addressId.toString()
-                        ? {
-                            ...a,
-                            address: `${selectedLocation.latitude.toFixed(5)}, ${selectedLocation.longitude.toFixed(5)}`,
-                            lat: selectedLocation.latitude.toString(),
-                            lng: selectedLocation.longitude.toString(),
-                        }
-                        : a
-                );
-                await AsyncStorage.setItem('@pizza_addresses', JSON.stringify(updatedList));
-                Alert.alert('Location Updated!', `${addressTitle} has been moved to your current GPS position.`, [{ text: 'OK', onPress: () => navigation.goBack() }]);
-            } else {
-                const newAddress = {
-                    id: Date.now(),
-                    title: addressTitle.trim(),
-                    address: `${selectedLocation.latitude.toFixed(5)}, ${selectedLocation.longitude.toFixed(5)}`,
-                    lat: selectedLocation.latitude.toString(),
-                    lng: selectedLocation.longitude.toString(),
-                    name: route.params?.name || 'Customer',
-                    phone: route.params?.phone || '',
-                };
-                addressList.unshift(newAddress);
-                await AsyncStorage.setItem('@pizza_addresses', JSON.stringify(addressList.slice(0, 5)));
-                Alert.alert('Location Saved!', `${addressTitle} has been saved.`, [{ text: 'OK', onPress: () => navigation.goBack() }]);
-            }
+            const newAddress = {
+                id: Date.now(),
+                title: addressTitle.trim(),
+                address: `${selectedLocation.latitude.toFixed(5)}, ${selectedLocation.longitude.toFixed(5)}`,
+                lat: selectedLocation.latitude.toString(),
+                lng: selectedLocation.longitude.toString(),
+                name: route.params?.name || 'Customer',
+                phone: route.params?.phone || '',
+            };
+            addressList.unshift(newAddress);
+            await AsyncStorage.setItem('@pizza_addresses', JSON.stringify(addressList.slice(0, 5)));
+            Alert.alert('Location Saved!', `${addressTitle} has been saved.`, [{ text: 'OK', onPress: () => navigation.goBack() }]);
         } catch {
             Alert.alert('Error', 'Could not save location. Please try again.');
         } finally {
@@ -87,15 +69,19 @@ export default function MapPickerScreen({ navigation, route }) {
     };
 
     return (
-        <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
+        <SafeAreaView style={styles.container} edges={['bottom']}>
+            <StatusBar barStyle="light-content" />
 
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <ArrowLeft color="#fff" size={24} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>{isRelocating ? 'Relocate Address' : 'Pin Location'}</Text>
-                <View style={{ width: 40 }} />
+                <SafeAreaView edges={['top']}>
+                    <View style={styles.headerRow}>
+                        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                            <ArrowLeft color="#fff" size={24} />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Pin Location</Text>
+                        <View style={{ width: 40 }} />
+                    </View>
+                </SafeAreaView>
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
@@ -149,7 +135,7 @@ export default function MapPickerScreen({ navigation, route }) {
                         ? <ActivityIndicator color="#fff" />
                         : <>
                             <Check color="#fff" size={20} />
-                            <Text style={styles.saveBtnText}>{isRelocating ? 'UPDATE LOCATION' : 'SAVE & CONTINUE'}</Text>
+                            <Text style={styles.saveBtnText}>SAVE & CONTINUE</Text>
                           </>
                     }
                 </TouchableOpacity>
@@ -161,7 +147,10 @@ export default function MapPickerScreen({ navigation, route }) {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f8fafc' },
     header: {
-        backgroundColor: '#22973a', flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#22973a',
+    },
+    headerRow: {
+        flexDirection: 'row', alignItems: 'center',
         justifyContent: 'space-between', paddingHorizontal: 20, height: 60,
     },
     backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 },

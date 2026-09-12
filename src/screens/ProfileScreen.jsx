@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image, Linking
+    View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image, Linking, Alert
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
 const LOGO = require('../../assets/images/logo.png');
 import { useAuth } from '../contexts/AuthContext';
+import { useStore } from '../contexts/StoreContext';
+import { useCart } from '../contexts/CartContext';
 
 const formatPhone = (email) => {
     if (!email) return '';
@@ -23,13 +26,55 @@ import { Package, MapPin, Tag, HelpCircle, Info, ChevronRight, LogOut } from 'lu
 
 export default function ProfileScreen({ navigation }) {
     const { user, signOut } = useAuth();
+    const { selectedStore, setSelectedStore } = useStore();
+    const { cartCount, clearCart } = useCart();
     const [rewardSlices, setRewardSlices] = useState(null);
+    const [rewardEnabled, setRewardEnabled] = useState(true);
+    const [slicesRequired, setSlicesRequired] = useState(6);
+    const [freePizzaValue, setFreePizzaValue] = useState(250);
 
-    useEffect(() => {
+    const fetchSlices = useCallback(() => {
         if (!user?.id) return;
         supabase.from('profiles').select('reward_slices').eq('id', user.id).single()
             .then(({ data }) => setRewardSlices(data?.reward_slices ?? 0));
     }, [user?.id]);
+
+    useEffect(() => { fetchSlices(); }, [fetchSlices]);
+
+    useFocusEffect(useCallback(() => { fetchSlices(); }, [fetchSlices]));
+
+    useEffect(() => {
+        supabase.from('store_settings').select('key, value')
+            .in('key', ['reward_enabled', 'reward_slices_required', 'reward_pizza_value'])
+            .then(({ data }) => {
+                const m = {};
+                data?.forEach(r => { m[r.key] = r.value; });
+                if (m.reward_enabled !== undefined) setRewardEnabled(m.reward_enabled !== 'false');
+                if (m.reward_slices_required) setSlicesRequired(Number(m.reward_slices_required));
+                if (m.reward_pizza_value) setFreePizzaValue(Number(m.reward_pizza_value));
+            });
+    }, []);
+
+    const switchStore = async () => {
+        clearCart();
+        await setSelectedStore(null);
+        navigation.navigate('StoreSelect');
+    };
+
+    const handleChangeStore = () => {
+        if (cartCount > 0) {
+            Alert.alert(
+                'Switch Location?',
+                'Switching locations will clear your cart since menu items differ by store.',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Switch', style: 'destructive', onPress: switchStore },
+                ]
+            );
+        } else {
+            switchStore();
+        }
+    };
 
     const menuItems = [
         { label: 'My Orders',        icon: Package,     screen: 'OrderHistory' },
@@ -40,9 +85,9 @@ export default function ProfileScreen({ navigation }) {
     ];
 
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="light-content" backgroundColor="#22973a" />
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        <SafeAreaView style={styles.safe} edges={['left', 'right']}>
+            <StatusBar barStyle="light-content" />
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
 
                 {/* Green header with avatar + name + pizza illustration */}
                 <View style={styles.header}>
@@ -55,34 +100,66 @@ export default function ProfileScreen({ navigation }) {
                     <Text style={[styles.deco, { top: 20, right: 70, fontSize: 20, transform: [{ rotate: '-10deg' }] }]}>🫑</Text>
 
                     {/* Avatar + name (above decorations) */}
-                    <View style={{ alignItems: 'center', zIndex: 1 }}>
-                        <View style={styles.avatar}>
-                            <Image source={LOGO} style={styles.avatarImg} />
+                    <SafeAreaView edges={['top']}>
+                        <View style={{ alignItems: 'center', zIndex: 1 }}>
+                            <View style={styles.avatar}>
+                                <Image source={LOGO} style={styles.avatarImg} />
+                            </View>
+                            <Text style={styles.userName}>{user?.user_metadata?.name || 'Pizza Lover'}</Text>
+                            <Text style={styles.userEmail}>{formatPhone(user?.email)}</Text>
                         </View>
-                        <Text style={styles.userName}>{user?.user_metadata?.name || 'Pizza Lover'}</Text>
-                        <Text style={styles.userEmail}>{formatPhone(user?.email)}</Text>
-                    </View>
+                    </SafeAreaView>
                 </View>
 
                 {/* Reward Widget */}
-                {rewardSlices !== null && (
+                {rewardEnabled && rewardSlices !== null && (
                     <View style={styles.rewardWidget}>
                         <View style={styles.rewardWidgetRow}>
                             <Text style={styles.rewardWidgetTitle}>🍕 Pizza Rewards</Text>
-                            <Text style={styles.rewardWidgetBadge}>{Math.min(rewardSlices, 6)}/6</Text>
+                            <Text style={styles.rewardWidgetBadge}>{Math.min(rewardSlices, slicesRequired)}/{slicesRequired}</Text>
                         </View>
                         <View style={styles.sliceRow}>
-                            {[0, 1, 2, 3, 4, 5].map(i => (
-                                <Text key={i} style={{ fontSize: 28 }}>{i < rewardSlices ? '🍕' : '⬜'}</Text>
+                            {Array.from({ length: slicesRequired }, (_, i) => (
+                                <Text key={i} style={{ fontSize: slicesRequired > 6 ? 22 : 28 }}>{i < rewardSlices ? '🍕' : '⬜'}</Text>
                             ))}
                         </View>
-                        <Text style={styles.rewardWidgetHint}>
-                            {rewardSlices >= 6
-                                ? '🎉 Redeem your free pizza at checkout!'
-                                : `${6 - Math.min(rewardSlices, 6)} more ${6 - Math.min(rewardSlices, 6) === 1 ? 'slice' : 'slices'} to earn a free pizza`}
-                        </Text>
+                        {rewardSlices >= slicesRequired ? (
+                            <>
+                                <Text style={[styles.rewardWidgetHint, { color: '#7c3aed', fontWeight: '800' }]}>
+                                    🎉 You've earned a free pizza worth ₹{freePizzaValue}!
+                                </Text>
+                                <TouchableOpacity
+                                    style={styles.redeemBtn}
+                                    onPress={() => navigation.navigate('CartTab')}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text style={styles.redeemBtnText}>Redeem at Checkout →</Text>
+                                </TouchableOpacity>
+                            </>
+                        ) : (
+                            <Text style={styles.rewardWidgetHint}>
+                                {(() => {
+                                    const rem = slicesRequired - Math.min(rewardSlices, slicesRequired);
+                                    return `${rem} more ${rem === 1 ? 'slice' : 'slices'} to earn a free pizza`;
+                                })()}
+                            </Text>
+                        )}
                     </View>
                 )}
+
+                {/* Delivering From — store switcher */}
+                <TouchableOpacity style={styles.storeRow} onPress={handleChangeStore} activeOpacity={0.8}>
+                    <View style={styles.menuItemLeft}>
+                        <View style={styles.menuIconBox}>
+                            <MapPin size={20} color="#22973a" />
+                        </View>
+                        <View>
+                            <Text style={styles.storeRowLabel}>Delivering from</Text>
+                            <Text style={styles.storeRowName}>{selectedStore?.name || 'Select a store'}</Text>
+                        </View>
+                    </View>
+                    <ChevronRight size={18} color="#cbd5e1" />
+                </TouchableOpacity>
 
                 {/* Menu Items */}
                 <View style={styles.menuSection}>
@@ -114,7 +191,7 @@ export default function ProfileScreen({ navigation }) {
                     <Text style={styles.signOutText}>Sign Out</Text>
                 </TouchableOpacity>
 
-                <Text style={styles.version}>Pizza Virus v1.0.0</Text>
+                <Text style={styles.version}>Pizza Virus v2.0.1</Text>
                 <TouchableOpacity onPress={() => Linking.openURL('https://www.falqonstudio.com')}>
                     <Text style={styles.devBy}>Developed by <Text style={styles.devByLink}>Falqon Studio</Text></Text>
                 </TouchableOpacity>
@@ -152,6 +229,17 @@ const styles = StyleSheet.create({
     avatarImg: { width: '100%', height: '100%', resizeMode: 'cover' },
     userName: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 4 },
     userEmail: { fontSize: 13, color: 'rgba(255,255,255,0.8)' },
+
+    // Delivering From row
+    storeRow: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+        backgroundColor: '#fff', marginHorizontal: 20, marginBottom: 16,
+        borderRadius: 20, paddingHorizontal: 18, paddingVertical: 14,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
+        borderWidth: 1.5, borderColor: '#dcfce7',
+    },
+    storeRowLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 },
+    storeRowName: { fontSize: 15, fontWeight: '900', color: '#0f172a', marginTop: 2 },
 
     // Menu card
     menuSection: {
@@ -194,7 +282,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
     },
     sliceRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-    rewardWidgetHint: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+    rewardWidgetHint: { fontSize: 13, color: '#64748b', fontWeight: '600', marginBottom: 2 },
+    redeemBtn: {
+        marginTop: 12, backgroundColor: '#7c3aed', borderRadius: 14,
+        paddingVertical: 13, alignItems: 'center',
+    },
+    redeemBtnText: { fontSize: 14, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
 
     version: { textAlign: 'center', color: '#cbd5e1', fontSize: 12, marginTop: 20 },
     devBy: { textAlign: 'center', fontSize: 12, color: '#cbd5e1', marginTop: 4, marginBottom: 20 },

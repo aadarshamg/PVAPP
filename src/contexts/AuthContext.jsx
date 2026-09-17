@@ -220,6 +220,27 @@ export const AuthProvider = ({ children }) => {
         return supabase.auth.signOut();
     };
 
+    // Permanently deletes the signed-in user's own account (Apple Guideline 5.1.1v —
+    // apps that support account creation must offer in-app account deletion). Runs via
+    // an edge function since deleting an auth user needs the service-role key; the
+    // function independently re-verifies the caller's token, so it can only ever delete
+    // the account making the request. Past orders survive (anonymized), only the
+    // account/profile/saved-on-device data goes away.
+    const deleteAccount = async () => {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (!currentSession?.access_token) throw new Error('You must be signed in to delete your account.');
+
+        const { data, error } = await supabase.functions.invoke('delete-account', {
+            headers: { Authorization: `Bearer ${currentSession.access_token}` },
+        });
+        if (error) throw error;
+        if (!data?.success) throw new Error(data?.error || 'Failed to delete account.');
+
+        // The auth user is gone server-side — clear the local session too.
+        setRecoveryMode(false);
+        await supabase.auth.signOut();
+    };
+
     // Send a password-reset email that deep-links back into the app
     const resetPasswordForEmail = async (email) => {
         const redirectUrl = makeRedirectUri({ scheme: 'pizzavirus', path: 'reset-password' });
@@ -240,7 +261,7 @@ export const AuthProvider = ({ children }) => {
             signInWithEmail, signUp,
             verifySignUpOtp, resendSignUpOtp,
             signInWithGoogle, signInWithApple,
-            signOut, loading,
+            signOut, deleteAccount, loading,
             recoveryMode, resetPasswordForEmail, updatePassword,
         }}>
             {!loading && children}

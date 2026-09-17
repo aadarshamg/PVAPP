@@ -1,0 +1,406 @@
+<title>Pizza Virus Legal</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --bg:#faf9f4;
+    --surface:#ffffff;
+    --surface-alt:#f1efe4;
+    --border:#e3e0d0;
+    --text:#1e2016;
+    --text-muted:#6b6e5f;
+    --accent:#1f7a3d;
+    --accent-deep:#155a2c;
+    --accent-soft:#e6f2e8;
+    --focus:#1f7a3d;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14150f;
+      --surface:#1b1d14;
+      --surface-alt:#23261a;
+      --border:#343629;
+      --text:#ecece2;
+      --text-muted:#a2a494;
+      --accent:#4fb672;
+      --accent-deep:#79cf96;
+      --accent-soft:#1d2f20;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14150f;
+    --surface:#1b1d14;
+    --surface-alt:#23261a;
+    --border:#343629;
+    --text:#ecece2;
+    --text-muted:#a2a494;
+    --accent:#4fb672;
+    --accent-deep:#79cf96;
+    --accent-soft:#1d2f20;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding-inline:20px;
+    padding-block:32px 56px;
+  }
+  h1,h2,h3,h4{font-family:"Source Serif 4",Georgia,serif; text-wrap:balance; margin:0;}
+  a{color:var(--accent-deep);}
+
+  .wrap{max-width:760px; margin-inline:auto;}
+
+  /* Header */
+  .masthead{
+    display:flex; align-items:center; gap:14px;
+    margin-bottom:6px;
+  }
+  .mark{
+    width:46px; height:46px; border-radius:12px;
+    background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:22px; flex-shrink:0;
+  }
+  .brand-name{font-size:22px; font-weight:700; letter-spacing:-0.01em;}
+  .brand-sub{font-size:13px; color:var(--text-muted); margin-top:1px;}
+  .entity-line{
+    font-size:13px; color:var(--text-muted); margin-top:18px;
+    padding-top:14px; border-top:1px solid var(--border);
+  }
+
+  /* Tabs */
+  .tabs{
+    display:flex; gap:6px; flex-wrap:wrap;
+    margin-top:26px; margin-bottom:28px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:0;
+  }
+  .tab{
+    font-family:inherit; font-size:14px; font-weight:600;
+    color:var(--text-muted); background:none; border:none;
+    padding:10px 4px 12px; cursor:pointer;
+    border-bottom:2px solid transparent;
+    margin-bottom:-1px;
+  }
+  .tab:hover{color:var(--text);}
+  .tab[aria-selected="true"]{color:var(--accent-deep); border-bottom-color:var(--accent);}
+  .tab:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:4px;}
+
+  /* Sections */
+  section{display:none;}
+  section[data-active]{display:block;}
+
+  .doc-meta{
+    display:flex; gap:16px; flex-wrap:wrap;
+    font-size:12.5px; color:var(--text-muted);
+    margin-bottom:22px;
+  }
+  .doc-meta strong{color:var(--text); font-weight:600;}
+
+  .policy h2{font-size:24px; margin-bottom:4px;}
+  .policy .intro{
+    font-size:15px; line-height:1.65; color:var(--text-muted);
+    max-width:62ch; margin-top:14px; margin-bottom:8px;
+  }
+  .policy h3{
+    font-size:16px; font-weight:600; font-family:"Inter",sans-serif;
+    color:var(--text); margin-top:28px; margin-bottom:8px;
+    display:flex; align-items:baseline; gap:8px;
+  }
+  .policy h3 .num{color:var(--accent-deep); font-variant-numeric:tabular-nums;}
+  .policy h4{
+    font-size:14px; font-weight:600; font-family:"Inter",sans-serif;
+    color:var(--text-muted); margin-top:14px; margin-bottom:6px;
+  }
+  .policy p{font-size:14.5px; line-height:1.7; max-width:62ch; margin:0 0 10px;}
+  .policy ul{margin:0 0 10px; padding-left:0; list-style:none; max-width:60ch;}
+  .policy li{
+    font-size:14.5px; line-height:1.6; color:var(--text);
+    padding-left:18px; position:relative; margin-bottom:6px;
+  }
+  .policy li::before{
+    content:"–"; position:absolute; left:0; color:var(--accent);
+  }
+
+  /* Contact */
+  .contact-grid{
+    display:grid; grid-template-columns:repeat(2,1fr); gap:12px;
+    margin-top:20px;
+  }
+  @media (max-width:480px){ .contact-grid{grid-template-columns:1fr;} }
+  .contact-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    padding:16px 18px;
+  }
+  .contact-card .label{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--text-muted); margin-bottom:6px;
+  }
+  .contact-card .value{font-size:15px; font-weight:600;}
+  .contact-card .value a{text-decoration:none;}
+
+  .office-card{
+    background:var(--accent-soft); border:1px solid var(--border); border-radius:12px;
+    padding:18px 20px; margin-top:14px;
+  }
+  .office-card .label{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--accent-deep); margin-bottom:8px;
+  }
+  .office-card .addr{font-size:14.5px; line-height:1.65; color:var(--text);}
+
+  footer{
+    margin-top:44px; padding-top:18px; border-top:1px solid var(--border);
+    font-size:12.5px; color:var(--text-muted); text-align:center;
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="mark" aria-hidden="true">🍕</div>
+    <div>
+      <div class="brand-name">Pizza Virus</div>
+      <div class="brand-sub">Legal Policies &amp; Support</div>
+    </div>
+  </div>
+  <div class="entity-line">Operated by Cloud Pakasala Private Limited</div>
+
+  <nav class="tabs" role="tablist" aria-label="Legal sections">
+    <button class="tab" role="tab" data-target="privacy">Privacy Policy</button>
+    <button class="tab" role="tab" data-target="terms">Terms &amp; Conditions</button>
+    <button class="tab" role="tab" data-target="refund">Refund &amp; Cancellation</button>
+    <button class="tab" role="tab" data-target="delivery">Delivery Policy</button>
+    <button class="tab" role="tab" data-target="contact">Contact &amp; Support</button>
+  </nav>
+
+  <!-- PRIVACY -->
+  <section id="privacy" class="policy">
+    <h2>Privacy Policy</h2>
+    <div class="doc-meta"><span><strong>Effective</strong> 21 April 2026</span><span><strong>Last updated</strong> 21 April 2026</span></div>
+    <p class="intro">This Privacy Policy applies to Pizza Virus, operated by Cloud Pakasala Private Limited. We value your privacy and are committed to protecting your personal information — this explains how we collect, use, and safeguard your data when you use our app or website.</p>
+
+    <h3><span class="num">1.</span> Information We Collect</h3>
+    <h4>a. Personal Information</h4>
+    <ul><li>Name</li><li>Phone number</li><li>Email address</li><li>Delivery address</li></ul>
+    <h4>b. Order Information</h4>
+    <ul><li>Items ordered</li><li>Payment details (processed securely via third-party providers)</li></ul>
+    <h4>c. Technical Information</h4>
+    <ul><li>IP address</li><li>Browser type</li><li>Device information</li><li>App/website usage data (via cookies and analytics tools)</li></ul>
+
+    <h3><span class="num">2.</span> How We Use Your Information</h3>
+    <ul>
+      <li>Process and deliver your orders</li>
+      <li>Communicate with you regarding your order</li>
+      <li>Improve our app and services</li>
+      <li>Send promotional offers (only if you opt in)</li>
+      <li>Ensure security and prevent fraud</li>
+    </ul>
+
+    <h3><span class="num">3.</span> Sharing Your Information</h3>
+    <p>We do not sell your personal information. We may share your data with:</p>
+    <ul>
+      <li>Delivery partners, to fulfill orders</li>
+      <li>Payment gateways, for secure transactions</li>
+      <li>Service providers, for app maintenance and analytics</li>
+    </ul>
+
+    <h3><span class="num">4.</span> Cookies &amp; Tracking Technologies</h3>
+    <p>Our app and website use cookies to enhance user experience, analyze traffic, and remember your preferences. You can disable cookies through your browser settings.</p>
+
+    <h3><span class="num">5.</span> Data Security</h3>
+    <p>We implement appropriate security measures to protect your personal data. However, no method of transmission over the internet is 100% secure.</p>
+
+    <h3><span class="num">6.</span> Your Rights</h3>
+    <p>You have the right to access your personal data, request correction or deletion, and opt out of marketing communications. To exercise these rights, contact us using the details in the Contact &amp; Support tab.</p>
+
+    <h3><span class="num">7.</span> Third-Party Links</h3>
+    <p>Our app may contain links to third-party websites. We are not responsible for their privacy practices.</p>
+
+    <h3><span class="num">8.</span> Policy Validity &amp; Updates</h3>
+    <p>This Privacy Policy is valid from 21 April 2026 and remains in effect until updated or replaced. Any changes will be reflected with a revised "Last Updated" date.</p>
+  </section>
+
+  <!-- TERMS -->
+  <section id="terms" class="policy">
+    <h2>Terms &amp; Conditions</h2>
+    <div class="doc-meta"><span><strong>Effective</strong> 21 April 2026</span><span><strong>Last updated</strong> 21 April 2026</span></div>
+    <p class="intro">These Terms &amp; Conditions govern your use of the Pizza Virus app and services, operated by Cloud Pakasala Private Limited. By using our app, you agree to be bound by these terms.</p>
+
+    <h3><span class="num">1.</span> Use of the App</h3>
+    <p>By using this app, you agree to provide accurate and complete information, use the app only for lawful purposes, and not misuse, disrupt, or attempt to harm the app or its services.</p>
+
+    <h3><span class="num">2.</span> Orders &amp; Services</h3>
+    <ul>
+      <li>All orders are subject to acceptance and availability</li>
+      <li>We reserve the right to refuse or cancel any order at our discretion</li>
+      <li>Prices and menu items are subject to change without prior notice</li>
+      <li>Estimated delivery times are indicative and may vary due to external factors</li>
+    </ul>
+
+    <h3><span class="num">3.</span> Payments</h3>
+    <p>Payments must be made through the available payment methods in the app. We use secure third-party payment gateways for transactions — Pizza Virus does not store your complete payment details.</p>
+
+    <h3><span class="num">4.</span> Cancellation &amp; Refunds</h3>
+    <p>Orders once placed may not be cancelled after preparation has started. Refunds, where applicable, are processed for failed transactions or incorrect/undelivered orders — see our Refund &amp; Cancellation Policy for full detail. Timelines may vary depending on the payment provider.</p>
+
+    <h3><span class="num">5.</span> User Conduct</h3>
+    <p>You agree not to use the app for fraudulent purposes, post or transmit harmful or illegal content, or attempt unauthorized access to our systems.</p>
+
+    <h3><span class="num">6.</span> Intellectual Property</h3>
+    <p>All content on this app — including our logo, images, text, and design — is the property of Pizza Virus and Cloud Pakasala Private Limited and is protected by applicable laws. Unauthorized use is strictly prohibited.</p>
+
+    <h3><span class="num">7.</span> Third-Party Services</h3>
+    <p>Our app may include services provided by third parties, such as payment gateways or ordering systems. We are not responsible for the performance or policies of these third-party services.</p>
+
+    <h3><span class="num">8.</span> Limitation of Liability</h3>
+    <p>Pizza Virus is not liable for indirect or consequential damages, delays caused by external factors (traffic, weather, etc.), or issues arising from third-party services.</p>
+
+    <h3><span class="num">9.</span> Termination</h3>
+    <p>We reserve the right to suspend or terminate access to our app or services at any time, without prior notice, for violations of these Terms.</p>
+
+    <h3><span class="num">10.</span> Changes to Terms</h3>
+    <p>We may update these Terms from time to time. Continued use of the app after changes implies acceptance of the updated terms.</p>
+
+    <h3><span class="num">11.</span> Governing Law</h3>
+    <p>These Terms are governed by and interpreted in accordance with the laws of India. Disputes are subject to the jurisdiction of the courts in Pune, Maharashtra.</p>
+  </section>
+
+  <!-- REFUND -->
+  <section id="refund" class="policy">
+    <h2>Refund &amp; Cancellation Policy</h2>
+    <div class="doc-meta"><span><strong>Effective</strong> 8 August 2026</span><span><strong>Last updated</strong> 8 August 2026</span></div>
+    <p class="intro">This policy applies to orders placed on Pizza Virus, operated by Cloud Pakasala Private Limited.</p>
+
+    <h3><span class="num">1.</span> Order Cancellation</h3>
+    <ul>
+      <li>Orders can only be cancelled before preparation has started</li>
+      <li>Once accepted and preparation begins, cancellation may not be possible</li>
+      <li>To request cancellation, contact us immediately (see Contact &amp; Support)</li>
+    </ul>
+
+    <h3><span class="num">2.</span> Refund Policy</h3>
+    <h4>a. Failed Transactions</h4>
+    <p>If your payment is deducted but the order is not confirmed, the full amount will be refunded.</p>
+    <h4>b. Incorrect or Missing Items</h4>
+    <p>If you receive the wrong order or items are missing, you are eligible for a refund or replacement.</p>
+    <h4>c. Order Not Delivered</h4>
+    <p>If your order is not delivered for reasons attributable to us, a full refund will be issued.</p>
+
+    <h3><span class="num">3.</span> Non-Refundable Situations</h3>
+    <ul>
+      <li>Incorrect address or contact details provided by the customer</li>
+      <li>Failed delivery attempts due to customer unavailability</li>
+      <li>Minor delays due to traffic, weather, or unforeseen circumstances</li>
+      <li>Change of mind after order confirmation</li>
+    </ul>
+
+    <h3><span class="num">4.</span> Refund Process</h3>
+    <p>Once a refund request is approved, we initiate the refund within 3 working days. The amount is generally credited to your original payment method within 5–7 working days after that, depending on your bank, card issuer, or payment gateway — so the total time from approval to credit may be up to 10 working days, excluding third-party delays.</p>
+
+    <h3><span class="num">5.</span> Policy Updates</h3>
+    <p>We reserve the right to update this policy at any time. Changes will be reflected with an updated "Last Updated" date.</p>
+  </section>
+
+  <!-- DELIVERY -->
+  <section id="delivery" class="policy">
+    <h2>Delivery Policy</h2>
+    <div class="doc-meta"><span><strong>Effective</strong> 21 April 2026</span><span><strong>Last updated</strong> 21 April 2026</span></div>
+    <p class="intro">This Delivery Policy applies to all orders placed on Pizza Virus, operated by Cloud Pakasala Private Limited.</p>
+
+    <h3><span class="num">1.</span> Delivery Areas</h3>
+    <p>We currently deliver to selected locations within our serviceable areas. Availability depends on your location and may vary over time — orders can only be placed for addresses within our delivery radius.</p>
+
+    <h3><span class="num">2.</span> Delivery Time</h3>
+    <p>Estimated delivery time is typically 30–60 minutes, varying with order volume, traffic, weather, and distance from the outlet. During peak hours or special occasions, delivery times may be longer.</p>
+
+    <h3><span class="num">3.</span> Delivery Charges</h3>
+    <p>Delivery charges, if applicable, are displayed at checkout before payment and may vary based on distance and order value.</p>
+
+    <h3><span class="num">4.</span> Order Processing</h3>
+    <p>Orders are processed immediately after confirmation. Once preparation begins, orders cannot be modified or cancelled.</p>
+
+    <h3><span class="num">5.</span> Delivery Attempts</h3>
+    <p>Our delivery partner will attempt to contact you at the phone number provided. If you are unavailable or unreachable, the order may be marked as a failed delivery, and refunds may not be applicable in that case.</p>
+
+    <h3><span class="num">6.</span> Contactless Delivery</h3>
+    <p>We may offer contactless delivery upon request. Please cooperate with delivery instructions for smooth service.</p>
+
+    <h3><span class="num">7.</span> Delays &amp; Exceptions</h3>
+    <p>Delays may occur due to high demand, weather, traffic, or unforeseen circumstances. Pizza Virus is not liable for delays caused by such external factors.</p>
+
+    <h3><span class="num">8.</span> Order Issues</h3>
+    <p>If you face any issue with your delivery — incorrect items, missing items, or an order not received — please contact us immediately so we can assist (see Contact &amp; Support).</p>
+  </section>
+
+  <!-- CONTACT -->
+  <section id="contact" class="policy">
+    <h2>Contact &amp; Support</h2>
+    <p class="intro">We're here to help — reach out anytime using any of the details below.</p>
+
+    <div class="contact-grid">
+      <div class="contact-card">
+        <div class="label">General Support</div>
+        <div class="value"><a href="mailto:info@pizzavirus.com">info@pizzavirus.com</a></div>
+      </div>
+      <div class="contact-card">
+        <div class="label">Phone</div>
+        <div class="value"><a href="tel:+917696007447">+91 76960 07447</a></div>
+      </div>
+      <div class="contact-card">
+        <div class="label">Privacy Enquiries</div>
+        <div class="value"><a href="mailto:info@pizzavirus.com">info@pizzavirus.com</a></div>
+      </div>
+      <div class="contact-card">
+        <div class="label">Legal Notices</div>
+        <div class="value"><a href="mailto:info@pizzavirus.com">info@pizzavirus.com</a></div>
+      </div>
+    </div>
+
+    <div class="office-card">
+      <div class="label">Registered Office</div>
+      <div class="addr">
+        Cloud Pakasala Private Limited<br>
+        Plot 356, Simar Enclave, Extension Maheru,<br>
+        Maheru, Kapurthala, Phagwara,<br>
+        Punjab, India — 144411
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    © 2026 Cloud Pakasala Private Limited. All rights reserved.<br>
+    These policies are subject to change. Continued use of the app after any updates constitutes acceptance of the revised policies.
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  var tabs = document.querySelectorAll('.tab');
+  var sections = document.querySelectorAll('section.policy');
+
+  function activate(id){
+    sections.forEach(function(s){
+      if (s.id === id) { s.setAttribute('data-active',''); }
+      else { s.removeAttribute('data-active'); }
+    });
+    tabs.forEach(function(t){
+      t.setAttribute('aria-selected', t.dataset.target === id ? 'true' : 'false');
+    });
+  }
+
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      activate(t.dataset.target);
+      history.replaceState(null, '', '#' + t.dataset.target);
+    });
+  });
+
+  var initial = (location.hash || '#privacy').slice(1);
+  var valid = Array.prototype.some.call(sections, function(s){ return s.id === initial; });
+  activate(valid ? initial : 'privacy');
+})();
+</script>

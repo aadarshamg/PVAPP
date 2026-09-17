@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image, Linking, Alert
+    View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image, Linking, Alert, ActivityIndicator
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,12 +22,13 @@ const formatPhone = (email) => {
     }
     return email;
 };
-import { Package, MapPin, Tag, HelpCircle, Info, ChevronRight, LogOut } from 'lucide-react-native';
+import { Package, MapPin, Tag, HelpCircle, Info, ChevronRight, LogOut, Trash2 } from 'lucide-react-native';
 
 export default function ProfileScreen({ navigation }) {
-    const { user, signOut } = useAuth();
+    const { user, signOut, deleteAccount } = useAuth();
     const { selectedStore, setSelectedStore } = useStore();
     const { cartCount, clearCart } = useCart();
+    const [deletingAccount, setDeletingAccount] = useState(false);
     const [rewardSlices, setRewardSlices] = useState(null);
     const [rewardEnabled, setRewardEnabled] = useState(true);
     const [slicesRequired, setSlicesRequired] = useState(6);
@@ -74,6 +75,45 @@ export default function ProfileScreen({ navigation }) {
         } else {
             switchStore();
         }
+    };
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            'Delete Your Account?',
+            'This permanently deletes your Pizza Virus account, including your saved addresses, Pizza Rewards balance, and login access. This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Continue',
+                    style: 'destructive',
+                    onPress: () => {
+                        // Second, explicit confirmation — this is irreversible.
+                        Alert.alert(
+                            'Are You Absolutely Sure?',
+                            'Your account will be deleted immediately and cannot be recovered.',
+                            [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                    text: 'Delete My Account',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                        setDeletingAccount(true);
+                                        try {
+                                            await deleteAccount();
+                                            // signOut() inside deleteAccount() clears the session;
+                                            // App.js's Root() switches to the auth flow automatically.
+                                        } catch (error) {
+                                            Alert.alert('Could Not Delete Account', error.message || 'Something went wrong. Please try again or contact support.');
+                                            setDeletingAccount(false);
+                                        }
+                                    },
+                                },
+                            ]
+                        );
+                    },
+                },
+            ]
+        );
     };
 
     const menuItems = [
@@ -191,6 +231,23 @@ export default function ProfileScreen({ navigation }) {
                     <Text style={styles.signOutText}>Sign Out</Text>
                 </TouchableOpacity>
 
+                {/* Delete Account — kept discoverable but visually quiet, separate from Sign Out */}
+                <TouchableOpacity
+                    style={styles.deleteAccountBtn}
+                    onPress={handleDeleteAccount}
+                    activeOpacity={0.7}
+                    disabled={deletingAccount}
+                >
+                    {deletingAccount ? (
+                        <ActivityIndicator size="small" color="#94a3b8" />
+                    ) : (
+                        <>
+                            <Trash2 size={14} color="#94a3b8" />
+                            <Text style={styles.deleteAccountText}>Delete Account</Text>
+                        </>
+                    )}
+                </TouchableOpacity>
+
                 <Text style={styles.version}>Pizza Virus v2.0.1</Text>
                 <TouchableOpacity onPress={() => Linking.openURL('https://www.falqonstudio.com')}>
                     <Text style={styles.devBy}>Developed by <Text style={styles.devByLink}>Falqon Studio</Text></Text>
@@ -268,6 +325,14 @@ const styles = StyleSheet.create({
         borderWidth: 1.5, borderColor: '#fecaca',
     },
     signOutText: { fontSize: 15, fontWeight: '800', color: '#dc2626' },
+
+    // Delete account — deliberately quieter than Sign Out (destructive, irreversible),
+    // but still a real, tappable, discoverable control per Apple's account-deletion requirement.
+    deleteAccountBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+        marginHorizontal: 20, marginTop: 14, paddingVertical: 10,
+    },
+    deleteAccountText: { fontSize: 13, fontWeight: '700', color: '#94a3b8' },
 
     rewardWidget: {
         backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 20,

@@ -59,7 +59,14 @@ export const AuthProvider = ({ children }) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
-            if (event === 'SIGNED_IN' && session?.user) ensureProfile(session.user);
+            // Supabase's own guidance: calling another supabase.auth-dependent method
+            // synchronously inside this callback can deadlock (this callback runs while
+            // the client's internal lock is still held, and ensureProfile's own query
+            // needs that same lock to attach the session). Deferring to the next tick
+            // avoids it — this is the same fix already applied in admin-portal/staff-portal.
+            if (event === 'SIGNED_IN' && session?.user) {
+                setTimeout(() => ensureProfile(session.user), 0);
+            }
         });
 
         // On web, check URL hash for tokens on page load (after OAuth redirect)

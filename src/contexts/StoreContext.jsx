@@ -11,33 +11,50 @@ export const StoreProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const hydrated = useRef(false);
 
+    const loadStores = useCallback(async () => {
+        setLoading(true);
+        try {
+            // Hard timeout: if this call ever hangs (a cold-start race with the auth
+            // client, a dead connection, anything), don't let the store picker spin
+            // forever — same Promise.race pattern DeliveryZoneCheckScreen already uses
+            // for its own GPS call. Without this, a single stuck request meant the
+            // screen never recovered short of force-quitting the app.
+            const FETCH_TIMEOUT = 10000;
+            const fetchPromise = supabase
+                .from('stores')
+                .select('*')
+                .eq('is_active', true)
+                .order('display_order', { ascending: true });
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('stores_fetch_timeout')), FETCH_TIMEOUT)
+            );
+            const { data } = await Promise.race([fetchPromise, timeoutPromise]);
+
+            const list = data || [];
+            setStores(list);
+
+            const saved = await AsyncStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const { id } = JSON.parse(saved);
+                const match = list.find(s => s.id === id);
+                if (match) setSelectedStoreState(match);
+            }
+        } catch {
+            // Timed out, offline, or genuinely no rows — stay empty either way;
+            // StoreSelectScreen shows an empty state with a Retry button.
+        } finally {
+            // Always resolves, even on timeout — the screen must never spin forever.
+            setLoading(false);
+        }
+    }, []);
+
     // Runs exactly once on app boot: loads the active store list, then restores
     // whichever store the customer picked last time (if it's still active).
     useEffect(() => {
         if (hydrated.current) return;
         hydrated.current = true;
-        (async () => {
-            try {
-                const { data } = await supabase
-                    .from('stores')
-                    .select('*')
-                    .eq('is_active', true)
-                    .order('display_order', { ascending: true });
-                const list = data || [];
-                setStores(list);
-
-                const saved = await AsyncStorage.getItem(STORAGE_KEY);
-                if (saved) {
-                    const { id } = JSON.parse(saved);
-                    const match = list.find(s => s.id === id);
-                    if (match) setSelectedStoreState(match);
-                }
-            } catch {
-                // Stay empty/null — StoreSelectScreen shows an empty state and lets the user retry.
-            }
-            setLoading(false);
-        })();
-    }, []);
+        loadStores();
+    }, [loadStores]);
 
     const setSelectedStore = useCallback(async (store) => {
         setSelectedStoreState(store);
@@ -50,7 +67,7 @@ export const StoreProvider = ({ children }) => {
     }, []);
 
     return (
-        <StoreContext.Provider value={{ stores, selectedStore, setSelectedStore, loading }}>
+        <StoreContext.Provider value={{ stores, selectedStore, setSelectedStore, loading, refetchStores: loadStores }}>
             {children}
         </StoreContext.Provider>
     );

@@ -8,7 +8,7 @@ import { useStore } from '../contexts/StoreContext';
 const LOGO = require('../../assets/images/logo.png');
 
 export default function StoreSelectScreen({ navigation }) {
-    const { stores, selectedStore, setSelectedStore, loading } = useStore();
+    const { stores, selectedStore, setSelectedStore, loading, refetchStores } = useStore();
 
     // A returning customer already has a remembered store — skip straight past this screen.
     useEffect(() => {
@@ -62,7 +62,12 @@ export default function StoreSelectScreen({ navigation }) {
                     </TouchableOpacity>
                 ))}
                 {stores.length === 0 && (
-                    <Text style={styles.emptyText}>No stores available right now. Please try again later.</Text>
+                    <View style={{ alignItems: 'center' }}>
+                        <Text style={styles.emptyText}>Couldn't load stores. Check your connection and try again.</Text>
+                        <TouchableOpacity style={styles.retryBtn} onPress={refetchStores} activeOpacity={0.85}>
+                            <Text style={styles.retryBtnText}>Retry</Text>
+                        </TouchableOpacity>
+                    </View>
                 )}
             </View>
         </SafeAreaView>
@@ -90,5 +95,10 @@ const styles = StyleSheet.create({
     },
     cardName: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
     cardAddress: { fontSize: 13, color: '#64748b', marginTop: 3 },
-    emptyText: { textAlign: 'center', color: '#94a3b8', fontSize: 14, marginTop: 40 },
+    emptyText: { textAlign: 'center', color: '#94a3b8', fontSize: 14, marginTop: 40, paddingHorizontal: 12 },
+    retryBtn: {
+        marginTop: 16, backgroundColor: '#22973a', borderRadius: 12,
+        paddingVertical: 12, paddingHorizontal: 32,
+    },
+    retryBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });

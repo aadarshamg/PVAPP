@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,7 +8,8 @@ import { useStore } from '../contexts/StoreContext';
 const LOGO = require('../../assets/images/logo.png');
 
 export default function StoreSelectScreen({ navigation }) {
-    const { stores, selectedStore, setSelectedStore, loading, refetchStores } = useStore();
+    const { stores, selectedStore, setSelectedStore, loading, loadError, refetchStores } = useStore();
+    const [elapsed, setElapsed] = useState(0);
 
     // A returning customer already has a remembered store — skip straight past this screen.
     useEffect(() => {
@@ -16,6 +17,16 @@ export default function StoreSelectScreen({ navigation }) {
             navigation.replace('ZoneCheck');
         }
     }, [loading, selectedStore, navigation]);
+
+    // Visible seconds-elapsed counter on the spinner itself — diagnostic, so it's
+    // obvious from the screen alone whether the fetch is still in flight, timed out,
+    // or something is stuck before this screen's own logic even runs.
+    useEffect(() => {
+        if (!loading) { setElapsed(0); return; }
+        const start = Date.now();
+        const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+        return () => clearInterval(id);
+    }, [loading]);
 
     const choose = async (store) => {
         // Clear any cached "inside the zone" result — it was computed against whichever
@@ -29,6 +40,7 @@ export default function StoreSelectScreen({ navigation }) {
         return (
             <View style={styles.centerScreen}>
                 <ActivityIndicator size="large" color="#22973a" />
+                {loading && <Text style={styles.elapsedText}>{elapsed}s</Text>}
             </View>
         );
     }
@@ -64,6 +76,7 @@ export default function StoreSelectScreen({ navigation }) {
                 {stores.length === 0 && (
                     <View style={{ alignItems: 'center' }}>
                         <Text style={styles.emptyText}>Couldn't load stores. Check your connection and try again.</Text>
+                        {loadError ? <Text style={styles.errorDetail}>{loadError}</Text> : null}
                         <TouchableOpacity style={styles.retryBtn} onPress={refetchStores} activeOpacity={0.85}>
                             <Text style={styles.retryBtnText}>Retry</Text>
                         </TouchableOpacity>
@@ -96,6 +109,8 @@ const styles = StyleSheet.create({
     cardName: { fontSize: 17, fontWeight: '900', color: '#0f172a' },
     cardAddress: { fontSize: 13, color: '#64748b', marginTop: 3 },
     emptyText: { textAlign: 'center', color: '#94a3b8', fontSize: 14, marginTop: 40, paddingHorizontal: 12 },
+    errorDetail: { textAlign: 'center', color: '#ef4444', fontSize: 12, marginTop: 10, paddingHorizontal: 20, fontFamily: 'monospace' },
+    elapsedText: { color: '#94a3b8', fontSize: 12, marginTop: 12, fontVariant: ['tabular-nums'] },
     retryBtn: {
         marginTop: 16, backgroundColor: '#22973a', borderRadius: 12,
         paddingVertical: 12, paddingHorizontal: 32,

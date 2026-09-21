@@ -9,10 +9,12 @@ export const StoreProvider = ({ children }) => {
     const [stores, setStores] = useState([]);
     const [selectedStore, setSelectedStoreState] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
     const hydrated = useRef(false);
 
     const loadStores = useCallback(async () => {
         setLoading(true);
+        setLoadError(null);
         try {
             // Hard timeout: if this call ever hangs (a cold-start race with the auth
             // client, a dead connection, anything), don't let the store picker spin
@@ -39,9 +41,11 @@ export const StoreProvider = ({ children }) => {
                 const match = list.find(s => s.id === id);
                 if (match) setSelectedStoreState(match);
             }
-        } catch {
-            // Timed out, offline, or genuinely no rows — stay empty either way;
-            // StoreSelectScreen shows an empty state with a Retry button.
+        } catch (err) {
+            // Timed out, offline, or a real Supabase error — surface the actual message
+            // (rather than swallowing it) so the empty state can show what really went
+            // wrong instead of just "something's wrong, retry" with no information.
+            setLoadError(err?.message || String(err));
         } finally {
             // Always resolves, even on timeout — the screen must never spin forever.
             setLoading(false);
@@ -67,7 +71,7 @@ export const StoreProvider = ({ children }) => {
     }, []);
 
     return (
-        <StoreContext.Provider value={{ stores, selectedStore, setSelectedStore, loading, refetchStores: loadStores }}>
+        <StoreContext.Provider value={{ stores, selectedStore, setSelectedStore, loading, loadError, refetchStores: loadStores }}>
             {children}
         </StoreContext.Provider>
     );

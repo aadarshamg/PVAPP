@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pizza Virus",
     "slug": "customer-app",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "pizzavirus",

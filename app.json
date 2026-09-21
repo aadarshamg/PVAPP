@@ -56,7 +56,8 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./plugins/withIosPodDeploymentTargetFix"
     ],
     "extra": {
       "eas": {

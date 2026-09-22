@@ -3,6 +3,7 @@ import { Platform, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { makeRedirectUri } from 'expo-auth-session';
 import { withTimeout } from '../utils/withTimeout';
+import { pvLog } from '../utils/debugLog';
 
 // Conditionally import WebBrowser only on native
 let WebBrowser = null;
@@ -23,11 +24,13 @@ const OAUTH_INTERACTION_TIMEOUT_MS = 180000; // human-paced browser/native-sheet
 // who already have a profile, and never touches their existing role/name.
 const ensureProfile = async (user) => {
     if (!user) return;
+    pvLog('ensureProfile: start');
     const { error } = await supabase.from('profiles').upsert(
         { id: user.id, name: user.user_metadata?.name || 'New Customer' },
         { onConflict: 'id', ignoreDuplicates: true }
     );
     if (error) console.warn('ensureProfile failed:', error.message);
+    pvLog('ensureProfile: done');
 };
 
 // Helper to extract params from URL hash or query string
@@ -60,6 +63,7 @@ export const AuthProvider = ({ children }) => {
 
         // Listen for auth state changes (handles web OAuth redirect automatically)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            pvLog(`onAuthStateChange: ${event} session=${!!session}`);
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
@@ -115,11 +119,13 @@ export const AuthProvider = ({ children }) => {
 
     // Email/Password Sign In
     const signInWithEmail = async (email, password) => {
+        pvLog('signInWithEmail: calling signInWithPassword');
         const { data, error } = await withTimeout(
             supabase.auth.signInWithPassword({ email, password }),
             AUTH_TIMEOUT_MS,
             'Sign-in is taking too long. Check your internet connection and try again.'
         );
+        pvLog('signInWithEmail: signInWithPassword resolved');
         if (error) throw error;
         return data;
     };

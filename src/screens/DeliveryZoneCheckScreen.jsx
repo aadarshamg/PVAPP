@@ -10,6 +10,12 @@ import { MapPin, ArrowRight, User, Phone } from 'lucide-react-native';
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../contexts/StoreContext';
+import { withTimeout } from '../utils/withTimeout';
+import { pvLog } from '../utils/debugLog';
+
+const STORAGE_TIMEOUT_MS = 5000;         // plain device storage — should be near-instant
+const PERMISSION_TIMEOUT_MS = 60000;     // a native OS dialog needs human reaction time (1 min)
+const FETCH_TIMEOUT_MS = 10000;          // plain network round-trip
 
 // Step states
 const STEP_CHECKING = 'checking';
@@ -24,6 +30,7 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
+        pvLog('DeliveryZoneCheckScreen: mounted');
         checkZone();
     }, []);
 
@@ -36,28 +43,48 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
         try {
             // Only cache "inside" results (3-min TTL) — never cache "outside"
             // because admin may update the zone at any time
-            const cached = await AsyncStorage.getItem('@zone_check_cache');
+            pvLog('checkZone: reading cache');
+            const cached = await withTimeout(
+                AsyncStorage.getItem('@zone_check_cache'),
+                STORAGE_TIMEOUT_MS,
+                'zone_cache_get_timeout'
+            );
             if (cached) {
                 const { result, ts } = JSON.parse(cached);
                 if (result === 'inside' && Date.now() - ts < 3 * 60 * 1000) {
+                    pvLog('checkZone: cache hit, proceeding');
                     proceedToApp();
                     return;
                 }
             }
             // Clear any stale cache before fresh check
-            await AsyncStorage.removeItem('@zone_check_cache');
+            await withTimeout(
+                AsyncStorage.removeItem('@zone_check_cache'),
+                STORAGE_TIMEOUT_MS,
+                'zone_cache_remove_timeout'
+            );
 
-            // Request GPS permission
-            const { status } = await Location.requestForegroundPermissionsAsync();
+            // Request GPS permission — a native OS dialog that only ever appears the
+            // very first time (later launches resolve instantly with no dialog at all,
+            // which is why a hang here specifically only shows up on a first attempt).
+            pvLog('checkZone: requesting location permission');
+            const { status } = await withTimeout(
+                Location.requestForegroundPermissionsAsync(),
+                PERMISSION_TIMEOUT_MS,
+                'location_permission_timeout'
+            );
+            pvLog(`checkZone: permission resolved (${status})`);
             if (status !== 'granted') { proceedToApp(); return; }
 
             // Fetch this store's delivery zone (each store draws its own polygon)
             if (!selectedStore?.id) { proceedToApp(); return; }
-            const { data } = await supabase
-                .from('stores')
-                .select('delivery_zone')
-                .eq('id', selectedStore.id)
-                .single();
+            pvLog('checkZone: fetching delivery_zone');
+            const { data } = await withTimeout(
+                supabase.from('stores').select('delivery_zone').eq('id', selectedStore.id).single(),
+                FETCH_TIMEOUT_MS,
+                'delivery_zone_fetch_timeout'
+            );
+            pvLog('checkZone: delivery_zone fetched');
 
             if (!data?.delivery_zone) { proceedToApp(); return; }
 
@@ -65,30 +92,35 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
             if (zone.length < 3) { proceedToApp(); return; }
 
             // Always get a fresh GPS position — never use last-known (can be hours old)
-            const GPS_TIMEOUT = 12000;
-            const gpsPromise = Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Balanced,
-            });
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('gps_timeout')), GPS_TIMEOUT)
+            pvLog('checkZone: requesting GPS position');
+            const pos = await withTimeout(
+                Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+                12000,
+                'gps_timeout'
             );
-
-            const pos = await Promise.race([gpsPromise, timeoutPromise]);
+            pvLog('checkZone: GPS position resolved');
             const coord = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
             const inside = isPointInPolygon(coord, zone);
 
             if (inside) {
                 // Cache "inside" for 3 minutes to avoid GPS on every open
-                await AsyncStorage.setItem('@zone_check_cache', JSON.stringify({
-                    result: 'inside',
-                    ts: Date.now(),
-                }));
+                await withTimeout(
+                    AsyncStorage.setItem('@zone_check_cache', JSON.stringify({
+                        result: 'inside',
+                        ts: Date.now(),
+                    })),
+                    STORAGE_TIMEOUT_MS,
+                    'zone_cache_set_timeout'
+                );
+                pvLog('checkZone: inside zone, proceeding');
                 proceedToApp();
             } else {
+                pvLog('checkZone: outside zone');
                 setStep(STEP_OUTSIDE);
             }
-        } catch {
+        } catch (e) {
             // GPS timeout, permission denied, offline — allow access
+            pvLog(`checkZone: FAILED (${e?.message}) — proceeding anyway`);
             proceedToApp();
         }
     };

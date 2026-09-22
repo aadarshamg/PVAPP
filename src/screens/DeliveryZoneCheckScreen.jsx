@@ -11,7 +11,6 @@ import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import { useStore } from '../contexts/StoreContext';
 import { withTimeout } from '../utils/withTimeout';
-import { pvLog } from '../utils/debugLog';
 
 const STORAGE_TIMEOUT_MS = 5000;         // plain device storage — should be near-instant
 const PERMISSION_TIMEOUT_MS = 60000;     // a native OS dialog needs human reaction time (1 min)
@@ -30,7 +29,6 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        pvLog('DeliveryZoneCheckScreen: mounted');
         checkZone();
     }, []);
 
@@ -43,7 +41,6 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
         try {
             // Only cache "inside" results (3-min TTL) — never cache "outside"
             // because admin may update the zone at any time
-            pvLog('checkZone: reading cache');
             const cached = await withTimeout(
                 AsyncStorage.getItem('@zone_check_cache'),
                 STORAGE_TIMEOUT_MS,
@@ -52,7 +49,6 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
             if (cached) {
                 const { result, ts } = JSON.parse(cached);
                 if (result === 'inside' && Date.now() - ts < 3 * 60 * 1000) {
-                    pvLog('checkZone: cache hit, proceeding');
                     proceedToApp();
                     return;
                 }
@@ -67,24 +63,20 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
             // Request GPS permission — a native OS dialog that only ever appears the
             // very first time (later launches resolve instantly with no dialog at all,
             // which is why a hang here specifically only shows up on a first attempt).
-            pvLog('checkZone: requesting location permission');
             const { status } = await withTimeout(
                 Location.requestForegroundPermissionsAsync(),
                 PERMISSION_TIMEOUT_MS,
                 'location_permission_timeout'
             );
-            pvLog(`checkZone: permission resolved (${status})`);
             if (status !== 'granted') { proceedToApp(); return; }
 
             // Fetch this store's delivery zone (each store draws its own polygon)
             if (!selectedStore?.id) { proceedToApp(); return; }
-            pvLog('checkZone: fetching delivery_zone');
             const { data } = await withTimeout(
                 supabase.from('stores').select('delivery_zone').eq('id', selectedStore.id).single(),
                 FETCH_TIMEOUT_MS,
                 'delivery_zone_fetch_timeout'
             );
-            pvLog('checkZone: delivery_zone fetched');
 
             if (!data?.delivery_zone) { proceedToApp(); return; }
 
@@ -92,13 +84,11 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
             if (zone.length < 3) { proceedToApp(); return; }
 
             // Always get a fresh GPS position — never use last-known (can be hours old)
-            pvLog('checkZone: requesting GPS position');
             const pos = await withTimeout(
                 Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
                 12000,
                 'gps_timeout'
             );
-            pvLog('checkZone: GPS position resolved');
             const coord = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
             const inside = isPointInPolygon(coord, zone);
 
@@ -112,15 +102,12 @@ export default function DeliveryZoneCheckScreen({ navigation }) {
                     STORAGE_TIMEOUT_MS,
                     'zone_cache_set_timeout'
                 );
-                pvLog('checkZone: inside zone, proceeding');
                 proceedToApp();
             } else {
-                pvLog('checkZone: outside zone');
                 setStep(STEP_OUTSIDE);
             }
-        } catch (e) {
+        } catch {
             // GPS timeout, permission denied, offline — allow access
-            pvLog(`checkZone: FAILED (${e?.message}) — proceeding anyway`);
             proceedToApp();
         }
     };

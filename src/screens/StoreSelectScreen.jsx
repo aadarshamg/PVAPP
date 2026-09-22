@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapPin, ArrowRight } from 'lucide-react-native';
 import { useStore } from '../contexts/StoreContext';
-import { pvLog } from '../utils/debugLog';
 
 const LOGO = require('../../assets/images/logo.png');
 
@@ -14,10 +13,8 @@ export default function StoreSelectScreen({ navigation }) {
 
     // A returning customer already has a remembered store — skip straight past this screen.
     useEffect(() => {
-        pvLog(`StoreSelectScreen effect: loading=${loading} selectedStore=${!!selectedStore} stores=${stores.length}`);
         if (loading) return;
         if (selectedStore) {
-            pvLog('StoreSelectScreen: navigating to ZoneCheck (remembered store)');
             navigation.replace('ZoneCheck');
             return;
         }
@@ -26,11 +23,7 @@ export default function StoreSelectScreen({ navigation }) {
         // second store goes active this stops matching and the real picker returns
         // automatically, with no further code changes needed.
         if (stores.length === 1) {
-            pvLog('StoreSelectScreen: auto-selecting only store');
-            setSelectedStore(stores[0]).then(() => {
-                pvLog('StoreSelectScreen: auto-select done, navigating to ZoneCheck');
-                navigation.replace('ZoneCheck');
-            });
+            setSelectedStore(stores[0]).then(() => navigation.replace('ZoneCheck'));
         }
     }, [loading, selectedStore, stores, navigation, setSelectedStore]);
 

@@ -13,10 +13,19 @@ export default function StoreSelectScreen({ navigation }) {
 
     // A returning customer already has a remembered store — skip straight past this screen.
     useEffect(() => {
-        if (!loading && selectedStore) {
+        if (loading) return;
+        if (selectedStore) {
             navigation.replace('ZoneCheck');
+            return;
         }
-    }, [loading, selectedStore, navigation]);
+        // Only one active store right now (Deep Nagar not yet launched) — skip the
+        // picker entirely rather than make the customer tap a single option. Once a
+        // second store goes active this stops matching and the real picker returns
+        // automatically, with no further code changes needed.
+        if (stores.length === 1) {
+            setSelectedStore(stores[0]).then(() => navigation.replace('ZoneCheck'));
+        }
+    }, [loading, selectedStore, stores, navigation, setSelectedStore]);
 
     // Visible seconds-elapsed counter on the spinner itself — diagnostic, so it's
     // obvious from the screen alone whether the fetch is still in flight, timed out,
@@ -36,7 +45,7 @@ export default function StoreSelectScreen({ navigation }) {
         navigation.replace('ZoneCheck');
     };
 
-    if (loading || selectedStore) {
+    if (loading || selectedStore || stores.length === 1) {
         return (
             <View style={styles.centerScreen}>
                 <ActivityIndicator size="large" color="#22973a" />

@@ -12,6 +12,25 @@ if (Platform.OS !== 'web') {
 
 const AuthContext = createContext({});
 
+const AUTH_TIMEOUT_MS = 15000;               // plain network round-trips
+const OAUTH_INTERACTION_TIMEOUT_MS = 180000; // human-paced browser/native-sheet steps (3 min)
+
+// Bounds any promise that could hang forever (a cold-start native bridge call, or a
+// deep-link redirect that never fires). If `promise` hasn't settled within `ms`, rejects
+// with a clear error; `promise` itself keeps running (some SDK calls have no cancel API)
+// but its eventual settlement is swallowed so it can't fire an unhandled-rejection
+// warning after we've already moved on.
+const withTimeout = (promise, ms, message) => {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+        clearTimeout(timer);
+        promise.catch(() => {});
+    });
+};
+
 // Safety net for the DB trigger that's supposed to create a profiles row on
 // signup — orders.customer_id references profiles(id), so if that row is
 // ever missing (trigger disabled/misconfigured), checkout fails with a
@@ -111,7 +130,11 @@ export const AuthProvider = ({ children }) => {
 
     // Email/Password Sign In
     const signInWithEmail = async (email, password) => {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await withTimeout(
+            supabase.auth.signInWithPassword({ email, password }),
+            AUTH_TIMEOUT_MS,
+            'Sign-in is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
         return data;
     };
@@ -156,28 +179,43 @@ export const AuthProvider = ({ children }) => {
             // On mobile: open an in-app browser
             const redirectUrl = makeRedirectUri({ scheme: 'pizzavirus', path: 'auth/callback' });
 
-            const { data, error } = await supabase.auth.signInWithOAuth({
-                provider: 'google',
-                options: {
-                    redirectTo: redirectUrl,
-                    skipBrowserRedirect: true,
-                },
-            });
+            const { data, error } = await withTimeout(
+                supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: redirectUrl,
+                        skipBrowserRedirect: true,
+                    },
+                }),
+                AUTH_TIMEOUT_MS,
+                'Could not start Google sign-in. Check your internet connection and try again.'
+            );
             if (error) throw error;
 
             if (data?.url) {
-                const result = await WebBrowser.openAuthSessionAsync(
-                    data.url,
-                    redirectUrl
-                );
+                let result;
+                try {
+                    result = await withTimeout(
+                        WebBrowser.openAuthSessionAsync(data.url, redirectUrl),
+                        OAUTH_INTERACTION_TIMEOUT_MS,
+                        'Google sign-in timed out. Please try again.'
+                    );
+                } catch (e) {
+                    try { WebBrowser.dismissAuthSession(); } catch (_) {}
+                    throw e;
+                }
 
                 if (result.type === 'success' && result.url) {
                     const params = extractParamsFromUrl(result.url);
                     if (params.access_token && params.refresh_token) {
-                        const { error: sessionError } = await supabase.auth.setSession({
-                            access_token: params.access_token,
-                            refresh_token: params.refresh_token,
-                        });
+                        const { error: sessionError } = await withTimeout(
+                            supabase.auth.setSession({
+                                access_token: params.access_token,
+                                refresh_token: params.refresh_token,
+                            }),
+                            AUTH_TIMEOUT_MS,
+                            'Signed in with Google, but finishing setup timed out. Please try again.'
+                        );
                         if (sessionError) throw sessionError;
                     }
                 } else if (result.type === 'cancel' || result.type === 'dismiss') {
@@ -202,20 +240,28 @@ export const AuthProvider = ({ children }) => {
             nonce
         );
 
-        const credential = await AppleAuthentication.signInAsync({
-            requestedScopes: [
-                AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-                AppleAuthentication.AppleAuthenticationScope.EMAIL,
-            ],
-            nonce: hashedNonce,
-        });
+        const credential = await withTimeout(
+            AppleAuthentication.signInAsync({
+                requestedScopes: [
+                    AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                    AppleAuthentication.AppleAuthenticationScope.EMAIL,
+                ],
+                nonce: hashedNonce,
+            }),
+            OAUTH_INTERACTION_TIMEOUT_MS,
+            'Apple sign-in timed out. Please try again.'
+        );
 
         if (credential.identityToken) {
-            const { data, error } = await supabase.auth.signInWithIdToken({
-                provider: 'apple',
-                token: credential.identityToken,
-                nonce,
-            });
+            const { data, error } = await withTimeout(
+                supabase.auth.signInWithIdToken({
+                    provider: 'apple',
+                    token: credential.identityToken,
+                    nonce,
+                }),
+                AUTH_TIMEOUT_MS,
+                'Signed in with Apple, but finishing setup timed out. Please try again.'
+            );
             if (error) throw error;
             return data;
         }

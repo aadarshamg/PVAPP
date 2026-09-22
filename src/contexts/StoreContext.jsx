@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/withTimeout';
 
 const StoreContext = createContext({});
 const STORAGE_KEY = '@pizza_store';
+const STORAGE_TIMEOUT_MS = 5000; // plain device storage — should be near-instant
 
 export const StoreProvider = ({ children }) => {
     const [stores, setStores] = useState([]);
@@ -35,11 +37,22 @@ export const StoreProvider = ({ children }) => {
             const list = data || [];
             setStores(list);
 
-            const saved = await AsyncStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                const { id } = JSON.parse(saved);
-                const match = list.find(s => s.id === id);
-                if (match) setSelectedStoreState(match);
+            // Reading the remembered store is best-effort and separate from the fetch
+            // above: a hang or failure here shouldn't turn a successful store-list load
+            // into an error state — it just means falling through to the picker/auto-skip.
+            try {
+                const saved = await withTimeout(
+                    AsyncStorage.getItem(STORAGE_KEY),
+                    STORAGE_TIMEOUT_MS,
+                    'storage_get_timeout'
+                );
+                if (saved) {
+                    const { id } = JSON.parse(saved);
+                    const match = list.find(s => s.id === id);
+                    if (match) setSelectedStoreState(match);
+                }
+            } catch {
+                // Non-fatal — proceed without a remembered store.
             }
         } catch (err) {
             // Timed out, offline, or a real Supabase error — surface the actual message
@@ -63,10 +76,25 @@ export const StoreProvider = ({ children }) => {
     const setSelectedStore = useCallback(async (store) => {
         setSelectedStoreState(store);
         try {
-            if (store) await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ id: store.id }));
-            else await AsyncStorage.removeItem(STORAGE_KEY);
+            if (store) {
+                await withTimeout(
+                    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ id: store.id })),
+                    STORAGE_TIMEOUT_MS,
+                    'storage_set_timeout'
+                );
+            } else {
+                await withTimeout(
+                    AsyncStorage.removeItem(STORAGE_KEY),
+                    STORAGE_TIMEOUT_MS,
+                    'storage_remove_timeout'
+                );
+            }
         } catch {
             // Non-fatal — the pick still works for this session even if it can't persist.
+            // Critically, this function must always resolve: StoreSelectScreen's
+            // auto-skip effect does setSelectedStore(stores[0]).then(() => navigate(...)),
+            // so an unbounded AsyncStorage hang here previously froze that navigation
+            // forever with no error and no way to recover short of a force-quit.
         }
     }, []);
 

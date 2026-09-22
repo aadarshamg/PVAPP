@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { makeRedirectUri } from 'expo-auth-session';
+import { withTimeout } from '../utils/withTimeout';
 
 // Conditionally import WebBrowser only on native
 let WebBrowser = null;
@@ -14,22 +15,6 @@ const AuthContext = createContext({});
 
 const AUTH_TIMEOUT_MS = 15000;               // plain network round-trips
 const OAUTH_INTERACTION_TIMEOUT_MS = 180000; // human-paced browser/native-sheet steps (3 min)
-
-// Bounds any promise that could hang forever (a cold-start native bridge call, or a
-// deep-link redirect that never fires). If `promise` hasn't settled within `ms`, rejects
-// with a clear error; `promise` itself keeps running (some SDK calls have no cancel API)
-// but its eventual settlement is swallowed so it can't fire an unhandled-rejection
-// warning after we've already moved on.
-const withTimeout = (promise, ms, message) => {
-    let timer;
-    const timeoutPromise = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
-    });
-    return Promise.race([promise, timeoutPromise]).finally(() => {
-        clearTimeout(timer);
-        promise.catch(() => {});
-    });
-};
 
 // Safety net for the DB trigger that's supposed to create a profiles row on
 // signup — orders.customer_id references profiles(id), so if that row is

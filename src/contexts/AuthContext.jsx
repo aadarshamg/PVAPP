@@ -23,11 +23,19 @@ const OAUTH_INTERACTION_TIMEOUT_MS = 180000; // human-paced browser/native-sheet
 // who already have a profile, and never touches their existing role/name.
 const ensureProfile = async (user) => {
     if (!user) return;
-    const { error } = await supabase.from('profiles').upsert(
-        { id: user.id, name: user.user_metadata?.name || 'New Customer' },
-        { onConflict: 'id', ignoreDuplicates: true }
-    );
-    if (error) console.warn('ensureProfile failed:', error.message);
+    try {
+        const { error } = await withTimeout(
+            supabase.from('profiles').upsert(
+                { id: user.id, name: user.user_metadata?.name || 'New Customer' },
+                { onConflict: 'id', ignoreDuplicates: true }
+            ),
+            AUTH_TIMEOUT_MS,
+            'ensureProfile_timeout'
+        );
+        if (error) console.warn('ensureProfile failed:', error.message);
+    } catch (e) {
+        console.warn('ensureProfile failed:', e.message);
+    }
 };
 
 // Helper to extract params from URL hash or query string
@@ -126,24 +134,33 @@ export const AuthProvider = ({ children }) => {
 
     // Email/Password Sign Up — triggers a signup-confirmation OTP email
     const signUp = async (email, password, name) => {
-        const { data, error } = await supabase.auth.signUp({
-            email, password,
-            options: { data: { name } }
-        });
+        const { data, error } = await withTimeout(
+            supabase.auth.signUp({ email, password, options: { data: { name } } }),
+            AUTH_TIMEOUT_MS,
+            'Sign-up is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
         return data;
     };
 
     // Verify the OTP code sent to the user's email after sign up
     const verifySignUpOtp = async (email, token) => {
-        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
+        const { data, error } = await withTimeout(
+            supabase.auth.verifyOtp({ email, token, type: 'signup' }),
+            AUTH_TIMEOUT_MS,
+            'Verification is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
         return data;
     };
 
     // Resend the signup OTP code
     const resendSignUpOtp = async (email) => {
-        const { error } = await supabase.auth.resend({ type: 'signup', email });
+        const { error } = await withTimeout(
+            supabase.auth.resend({ type: 'signup', email }),
+            AUTH_TIMEOUT_MS,
+            'Resending the code is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
     };
 
@@ -255,7 +272,11 @@ export const AuthProvider = ({ children }) => {
 
     const signOut = () => {
         setRecoveryMode(false);
-        return supabase.auth.signOut();
+        return withTimeout(
+            supabase.auth.signOut(),
+            AUTH_TIMEOUT_MS,
+            'Sign-out is taking too long. Check your internet connection and try again.'
+        );
     };
 
     // Permanently deletes the signed-in user's own account (Apple Guideline 5.1.1v —
@@ -265,30 +286,50 @@ export const AuthProvider = ({ children }) => {
     // the account making the request. Past orders survive (anonymized), only the
     // account/profile/saved-on-device data goes away.
     const deleteAccount = async () => {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession } } = await withTimeout(
+            supabase.auth.getSession(),
+            AUTH_TIMEOUT_MS,
+            'Could not verify your session. Check your internet connection and try again.'
+        );
         if (!currentSession?.access_token) throw new Error('You must be signed in to delete your account.');
 
-        const { data, error } = await supabase.functions.invoke('delete-account', {
-            headers: { Authorization: `Bearer ${currentSession.access_token}` },
-        });
+        const { data, error } = await withTimeout(
+            supabase.functions.invoke('delete-account', {
+                headers: { Authorization: `Bearer ${currentSession.access_token}` },
+            }),
+            AUTH_TIMEOUT_MS,
+            'Deleting your account is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
         if (!data?.success) throw new Error(data?.error || 'Failed to delete account.');
 
         // The auth user is gone server-side — clear the local session too.
         setRecoveryMode(false);
-        await supabase.auth.signOut();
+        await withTimeout(
+            supabase.auth.signOut(),
+            AUTH_TIMEOUT_MS,
+            'Account deleted, but sign-out is taking too long. Please restart the app.'
+        );
     };
 
     // Send a password-reset email that deep-links back into the app
     const resetPasswordForEmail = async (email) => {
         const redirectUrl = makeRedirectUri({ scheme: 'pizzavirus', path: 'reset-password' });
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
+        const { error } = await withTimeout(
+            supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl }),
+            AUTH_TIMEOUT_MS,
+            'Sending the reset email is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
     };
 
     // Set a new password while in recovery mode (or for a signed-in user)
     const updatePassword = async (newPassword) => {
-        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        const { error } = await withTimeout(
+            supabase.auth.updateUser({ password: newPassword }),
+            AUTH_TIMEOUT_MS,
+            'Updating your password is taking too long. Check your internet connection and try again.'
+        );
         if (error) throw error;
         setRecoveryMode(false);
     };

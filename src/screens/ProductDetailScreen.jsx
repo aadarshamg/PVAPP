@@ -141,6 +141,22 @@ export default function ProductDetailScreen({ route, navigation }) {
             ].filter(Boolean);
         }
 
+        // Single/Double Patty — a fixed two-way choice for burgers.
+        if (productType === 'patty') {
+            return [
+                hasSizePrice(product.base_price_small)  && { key: 'small',  label: 'Single Patty', price: product.base_price_small,  size: '' },
+                hasSizePrice(product.base_price_medium) && { key: 'medium', label: 'Double Patty', price: product.base_price_medium, size: '' },
+            ].filter(Boolean);
+        }
+
+        // With/Without Ice Cream — a fixed two-way choice for brownies/choco bombs.
+        if (productType === 'ice_cream') {
+            return [
+                hasSizePrice(product.base_price_small)  && { key: 'small',  label: 'Without Ice Cream', price: product.base_price_small,  size: '' },
+                hasSizePrice(product.base_price_medium) && { key: 'medium', label: 'With Ice Cream', price: product.base_price_medium, size: '' },
+            ].filter(Boolean);
+        }
+
         // Pizza — the shop's configured 4-size names.
         return [
             hasSizePrice(product.base_price_small)  && { key: 'small',  label: sizeLabels.small,  price: product.base_price_small,  size: '6"' },
@@ -149,6 +165,15 @@ export default function ProductDetailScreen({ route, navigation }) {
             hasSizePrice(product.base_price_xlarge) && { key: 'xlarge', label: sizeLabels.xlarge, price: product.base_price_xlarge, size: '12"' },
         ].filter(Boolean);
     }, [product, sizeLabels]);
+
+    const sizeSectionTitle = useMemo(() => {
+        switch (product.product_type) {
+            case 'half_full': return 'Half or Full';
+            case 'patty': return 'Choose Patty';
+            case 'ice_cream': return 'Choose Option';
+            default: return 'Choose Size';
+        }
+    }, [product.product_type]);
 
     // Shared font size for all size buttons, sized down together if any label has a long word —
     // keeps every button's text visually consistent instead of each shrinking independently.
@@ -269,7 +294,7 @@ export default function ProductDetailScreen({ route, navigation }) {
                     {/* Size — hidden entirely for single-size products (e.g. Garlic Bread) */}
                     {sizes.length > 1 && (
                         <>
-                            <Text style={styles.optionTitle}>Choose Size</Text>
+                            <Text style={styles.optionTitle}>{sizeSectionTitle}</Text>
                             <View style={styles.sizeRow}>
                                 {sizes.map(size => {
                                     const isActive = selectedSize === size.key;

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TouchableOpacity,
-    Image, ActivityIndicator, StatusBar, ScrollView, Dimensions
+    ActivityIndicator, StatusBar, ScrollView, Dimensions
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { ArrowLeft, Filter, ArrowUpDown } from 'lucide-react-native';
@@ -152,7 +153,7 @@ export default function MenuScreen({ navigation, route }) {
                 activeOpacity={0.88}
             >
                 {cat.image_url
-                    ? <Image source={{ uri: cat.image_url }} style={styles.tileImage} resizeMode="cover" />
+                    ? <Image source={{ uri: cat.image_url }} style={styles.tileImage} contentFit="cover" cachePolicy="memory-disk" />
                     : <View style={[styles.tileImagePlaceholder, { backgroundColor: color }]}>
                           <Text style={[styles.tileEmoji, large && { fontSize: 72 }]}>{emoji}</Text>
                       </View>
@@ -227,7 +228,7 @@ export default function MenuScreen({ navigation, route }) {
         >
             <View style={styles.cardImgBox}>
                 {item.image_url
-                    ? <Image source={{ uri: item.image_url }} style={styles.cardImg} />
+                    ? <Image source={{ uri: item.image_url }} style={styles.cardImg} contentFit="cover" cachePolicy="memory-disk" />
                     : <Text style={{ fontSize: 52 }}>🍽️</Text>}
                 <View style={[styles.vegIcon, { borderColor: item.is_veg ? '#22973a' : '#EF4444' }]}>
                     <View style={[styles.vegDot, { backgroundColor: item.is_veg ? '#22973a' : '#EF4444' }]} />
@@ -413,7 +414,7 @@ const styles = StyleSheet.create({
         width: 110, height: 110, borderRadius: 16, backgroundColor: '#f3feb0',
         justifyContent: 'center', alignItems: 'center', overflow: 'hidden', position: 'relative',
     },
-    cardImg: { width: '100%', height: '100%', resizeMode: 'cover' },
+    cardImg: { width: '100%', height: '100%' },
     vegIcon: {
         position: 'absolute', top: 6, right: 6,
         width: 18, height: 18, borderWidth: 2, borderRadius: 4, backgroundColor: '#fff',

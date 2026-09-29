@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    Image, Animated, TextInput
+    Animated, TextInput
 } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useCart } from '../contexts/CartContext';
@@ -44,6 +45,10 @@ export default function ProductDetailScreen({ route, navigation }) {
     });
     const [instructions, setInstructions] = useState('');
     const [quantity, setQuantity] = useState(1);
+    // A real quantity (0-2), not a choice between two named items — only rendered
+    // when the product actually offers it (cheese_slice_price is set).
+    const [cheeseSlices, setCheeseSlices] = useState(0);
+    const MAX_CHEESE_SLICES = 2;
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
 
     // Toast
@@ -230,6 +235,7 @@ export default function ProductDetailScreen({ route, navigation }) {
         selectedToppings.forEach(t => { total += Number(t.price || 0); });
         selectedDips.forEach(d => { total += Number(d.price || 0); });
         selectedAddons.forEach(a => { total += Number(a.price || 0); });
+        if (product.cheese_slice_price) total += cheeseSlices * Number(product.cheese_slice_price);
         return total * quantity;
     };
 
@@ -254,7 +260,7 @@ export default function ProductDetailScreen({ route, navigation }) {
     const handleAddToCart = () => {
         const sizeObj = sizes.find(s => s.key === selectedSize);
         if (!sizeObj) return;
-        addToCart(product, sizeObj, selectedCrust, selectedToppings, quantity, getTotalPrice(), selectedCheese, selectedDips, instructions, selectedAddons, selectedBase);
+        addToCart(product, sizeObj, selectedCrust, selectedToppings, quantity, getTotalPrice(), selectedCheese, selectedDips, instructions, selectedAddons, selectedBase, cheeseSlices);
         selectedFeastCombos.forEach(combo => addFeastCombo(combo));
         showToast(`${quantity}x ${product.name} — ₹${getTotalPrice()}`);
     };
@@ -268,7 +274,7 @@ export default function ProductDetailScreen({ route, navigation }) {
                 {/* Product Image */}
                 <View style={styles.imageContainer}>
                     {product.image_url
-                        ? <Image source={{ uri: product.image_url }} style={styles.image} />
+                        ? <Image source={{ uri: product.image_url }} style={styles.image} contentFit="cover" cachePolicy="memory-disk" />
                         : <View style={styles.imagePlaceholder}><Text style={{ fontSize: 80 }}>🍽️</Text></View>}
                     <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
                         <ArrowLeft color="#111827" size={24} />
@@ -376,7 +382,7 @@ export default function ProductDetailScreen({ route, navigation }) {
                                             onPress={() => toggleFeastCombo(combo)}
                                             activeOpacity={0.7}>
                                             {combo.image_url
-                                                ? <Image source={{ uri: combo.image_url }} style={styles.feastImage} />
+                                                ? <Image source={{ uri: combo.image_url }} style={styles.feastImage} contentFit="cover" cachePolicy="memory-disk" />
                                                 : <Text style={{ fontSize: 20, marginRight: 10 }}>🎉</Text>}
                                             <Text style={[styles.toppingName, isActive && { color: '#b45309' }]} numberOfLines={2}>
                                                 {combo.name}
@@ -474,7 +480,7 @@ export default function ProductDetailScreen({ route, navigation }) {
                                             style={[styles.toppingRow, isActive && styles.dipRowActive]}
                                             onPress={() => toggleDip(dip)}
                                             activeOpacity={0.7}>
-                                            {dip.image_url && <Image source={{ uri: dip.image_url }} style={styles.dipImage} />}
+                                            {dip.image_url && <Image source={{ uri: dip.image_url }} style={styles.dipImage} contentFit="cover" cachePolicy="memory-disk" />}
                                             <Text style={[styles.toppingName, isActive && { color: '#1d4ed8' }]} numberOfLines={1}>
                                                 {dip.name}
                                             </Text>
@@ -514,6 +520,34 @@ export default function ProductDetailScreen({ route, navigation }) {
                                         </TouchableOpacity>
                                     );
                                 })}
+                            </View>
+                        </>
+                    )}
+
+                    {/* ── Extra Cheese Slice — quantity, not a choice between named items ── */}
+                    {!!product.cheese_slice_price && (
+                        <>
+                            <Text style={styles.optionTitle}>Extra Cheese Slice</Text>
+                            <View style={styles.cheeseSliceRow}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.cheeseSliceLabel}>Cheese Slice</Text>
+                                    <Text style={styles.cheeseSlicePrice}>+₹{product.cheese_slice_price} each</Text>
+                                </View>
+                                <TouchableOpacity
+                                    style={styles.qtyBtn}
+                                    onPress={() => setCheeseSlices(n => Math.max(0, n - 1))}
+                                    disabled={cheeseSlices === 0}
+                                >
+                                    <Minus size={18} color={cheeseSlices === 0 ? '#e2e8f0' : '#94a3b8'} />
+                                </TouchableOpacity>
+                                <Text style={styles.cheeseSliceCount}>{cheeseSlices}</Text>
+                                <TouchableOpacity
+                                    style={styles.qtyBtn}
+                                    onPress={() => setCheeseSlices(n => Math.min(MAX_CHEESE_SLICES, n + 1))}
+                                    disabled={cheeseSlices === MAX_CHEESE_SLICES}
+                                >
+                                    <Plus size={18} color={cheeseSlices === MAX_CHEESE_SLICES ? '#e2e8f0' : '#94a3b8'} />
+                                </TouchableOpacity>
                             </View>
                         </>
                     )}
@@ -601,7 +635,7 @@ const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: '#ffffff' },
     container: { flex: 1 },
     imageContainer: { height: 280, backgroundColor: '#f3feb0', position: 'relative' },
-    image: { width: '100%', height: '100%', resizeMode: 'cover' },
+    image: { width: '100%', height: '100%' },
     imagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     backBtn: {
         position: 'absolute', top: 40, left: 16,
@@ -664,6 +698,15 @@ const styles = StyleSheet.create({
     toppingRowActive: { backgroundColor: '#f0fdf4', borderColor: '#48d23c' },
     dipRowActive: { backgroundColor: '#eff6ff', borderColor: '#3b82f6' },
     dipImage: { width: 28, height: 28, borderRadius: 8, marginRight: 10 },
+    cheeseSliceRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: '#f8fafc', borderRadius: 16,
+        paddingHorizontal: 16, paddingVertical: 14,
+        borderWidth: 1.5, borderColor: 'transparent',
+    },
+    cheeseSliceLabel: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
+    cheeseSlicePrice: { fontSize: 12, color: '#64748b', marginTop: 2 },
+    cheeseSliceCount: { fontSize: 17, fontWeight: '900', color: '#0f172a', minWidth: 22, textAlign: 'center' },
     cheeseRowActive: { backgroundColor: '#fffbeb', borderColor: '#d97706' },
     baseRowActive: { backgroundColor: '#f0fdfa', borderColor: '#0f766e' },
     baseRadioActive: { borderColor: '#0f766e' },

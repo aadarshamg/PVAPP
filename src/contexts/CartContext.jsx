@@ -9,8 +9,8 @@ export const CartProvider = ({ children }) => {
     const [activeCoupon, setActiveCoupon] = useState(null);
 
     // Add To Cart
-    const addToCart = (product, sizeObj, crustObj, toppingsList, quantity, totalItemPrice, cheese = null, dips = [], instructions = '', addons = [], base = null) => {
-        const configId = `${product.id}-${sizeObj.key}-${crustObj?.id || 'base'}-${toppingsList.map(t => t.id).sort().join(',')}-${cheese?.id || ''}-${dips.map(d => d.id).sort().join(',')}-${addons.map(a => a.id).sort().join(',')}-${base?.id || ''}`;
+    const addToCart = (product, sizeObj, crustObj, toppingsList, quantity, totalItemPrice, cheese = null, dips = [], instructions = '', addons = [], base = null, cheeseSlices = 0) => {
+        const configId = `${product.id}-${sizeObj.key}-${crustObj?.id || 'base'}-${toppingsList.map(t => t.id).sort().join(',')}-${cheese?.id || ''}-${dips.map(d => d.id).sort().join(',')}-${addons.map(a => a.id).sort().join(',')}-${base?.id || ''}-cs${cheeseSlices}`;
 
         setCartItems(prev => {
             const existingIndex = prev.findIndex(item => item.configId === configId);
@@ -31,6 +31,7 @@ export const CartProvider = ({ children }) => {
                     dips,
                     addons,
                     base,
+                    cheeseSlices,
                     instructions,
                     qty: quantity,
                     unitPrice: totalItemPrice / quantity,

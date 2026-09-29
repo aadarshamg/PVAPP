@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    Image, FlatList, ActivityIndicator, SafeAreaView,
+    FlatList, ActivityIndicator, SafeAreaView,
     StatusBar, Dimensions, Platform, Animated, Modal
 } from 'react-native';
+import { Image } from 'expo-image';
 
 const LOGO = require('../../assets/images/logo.png');
 import { useFocusEffect } from '@react-navigation/native';
@@ -108,7 +109,7 @@ function AppLoadingScreen() {
             <Animated.View style={{ alignItems: 'center', opacity: fadeIn }}>
                 {/* Logo */}
                 <Animated.View style={[loadStyles.logoWrap, { transform: [{ scale: pulse }] }]}>
-                    <Image source={LOGO} style={loadStyles.logoImage} />
+                    <Image source={LOGO} style={loadStyles.logoImage} contentFit="cover" />
                 </Animated.View>
 
                 {/* Brand */}
@@ -145,7 +146,7 @@ const loadStyles = StyleSheet.create({
         shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 12,
         marginBottom: 28,
     },
-    logoImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+    logoImage: { width: '100%', height: '100%' },
     brand: {
         fontSize: 32, fontWeight: '900', color: '#fff',
         letterSpacing: 2, marginBottom: 6,
@@ -347,7 +348,7 @@ export default function HomeScreen({ navigation }) {
                         <View style={styles.headerRow}>
                             {/* Logo */}
                             <View style={styles.logoSquare}>
-                                <Image source={LOGO} style={styles.logoImg} />
+                                <Image source={LOGO} style={styles.logoImg} contentFit="cover" />
                             </View>
                             <View style={styles.headerMid}>
                                 <Text style={styles.brandName}>PIZZA VIRUS</Text>
@@ -407,7 +408,7 @@ export default function HomeScreen({ navigation }) {
                             decelerationRate="fast"
                             renderItem={({ item: b }) => (
                                 <View style={styles.bannerCard}>
-                                    <Image source={{ uri: b.image_url }} style={styles.bannerImg} />
+                                    <Image source={{ uri: b.image_url }} style={styles.bannerImg} contentFit="cover" cachePolicy="memory-disk" />
                                     {(b.title || b.subtitle) && (
                                         <View style={styles.bannerOverlay}>
                                             {b.title ? <Text style={styles.bannerTitle}>{b.title}</Text> : null}
@@ -438,7 +439,7 @@ export default function HomeScreen({ navigation }) {
                                     activeOpacity={0.93}
                                 >
                                     {item.image_url
-                                        ? <Image source={{ uri: item.image_url }} style={styles.featImg} />
+                                        ? <Image source={{ uri: item.image_url }} style={styles.featImg} contentFit="cover" cachePolicy="memory-disk" />
                                         : <View style={styles.featImgPlaceholder}><Text style={{ fontSize: 72 }}>🍽️</Text></View>
                                     }
                                     <View style={styles.featBadge}>
@@ -484,7 +485,7 @@ export default function HomeScreen({ navigation }) {
                                         activeOpacity={0.85}
                                     >
                                         {cat.image_url
-                                            ? <Image source={{ uri: cat.image_url }} style={styles.catImg} />
+                                            ? <Image source={{ uri: cat.image_url }} style={styles.catImg} contentFit="cover" cachePolicy="memory-disk" />
                                             : <View style={[styles.catImgFallback, { backgroundColor: bg }]}>
                                                 <Icon size={28} color="#fff" strokeWidth={2} />
                                               </View>
@@ -540,7 +541,7 @@ export default function HomeScreen({ navigation }) {
                                 >
                                     <View style={styles.popularImgWrap}>
                                         {item.image_url
-                                            ? <Image source={{ uri: item.image_url }} style={styles.popularImg} />
+                                            ? <Image source={{ uri: item.image_url }} style={styles.popularImg} contentFit="cover" cachePolicy="memory-disk" />
                                             : <View style={styles.popularImgPlaceholder}><Text style={{ fontSize: 36 }}>🍽️</Text></View>
                                         }
                                         {/* White circle veg indicator */}
@@ -642,7 +643,7 @@ const styles = StyleSheet.create({
         marginRight: 14,
         shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 5,
     },
-    logoImg: { width: '100%', height: '100%', resizeMode: 'cover' },
+    logoImg: { width: '100%', height: '100%' },
 
     headerMid: { flex: 1 },
     brandName: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
@@ -725,7 +726,7 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 10, elevation: 6,
     },
-    bannerImg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', resizeMode: 'cover' },
+    bannerImg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
     bannerOverlay: {
         position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -745,7 +746,7 @@ const styles = StyleSheet.create({
     },
     featImg: {
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        width: '100%', height: '100%', resizeMode: 'cover',
+        width: '100%', height: '100%',
     },
     featImgPlaceholder: {
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -784,7 +785,7 @@ const styles = StyleSheet.create({
     },
     catImg: {
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        width: '100%', height: '100%', resizeMode: 'cover',
+        width: '100%', height: '100%',
     },
     catImgFallback: {
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -820,7 +821,7 @@ const styles = StyleSheet.create({
         shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3,
     },
     popularImgWrap: { width: '100%', height: 130, position: 'relative', backgroundColor: '#f3feb0' },
-    popularImg: { width: '100%', height: '100%', resizeMode: 'cover' },
+    popularImg: { width: '100%', height: '100%' },
     popularImgPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f3feb0' },
     popularVegDotOuter: {
         position: 'absolute', top: 8, right: 8,

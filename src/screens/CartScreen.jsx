@@ -216,7 +216,8 @@ export default function CartScreen({ navigation }) {
                 base_name:     item.base?.name || null,
                 dips_text:     item.dips?.length > 0 ? item.dips.map(d => d.name).join(', ') : null,
                 addons_text:   item.addons?.length > 0 ? item.addons.map(a => a.name).join(', ') : null,
-                cheese_slice_text: item.cheeseSlices > 0 ? `${item.cheeseSlices}x Cheese Slice` : null,
+                cheese_slice_text: item.cheeseSliceChoice === 'single' ? 'Single Cheese Slice'
+                    : item.cheeseSliceChoice === 'double' ? 'Double Cheese Slice' : null,
                 instructions:  item.instructions?.trim() || null,
                 quantity:      Math.max(1, Math.min(item.qty, 50)),
                 price:         Math.round(item.unitPrice * 100) / 100,

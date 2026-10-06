@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pizza Virus",
     "slug": "customer-app",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
     "scheme": "pizzavirus",
@@ -58,7 +58,8 @@
       ],
       "expo-font",
       "./plugins/withIosPodDeploymentTargetFix",
-      "./plugins/withAndroidResizeableActivity"
+      "./plugins/withAndroidResizeableActivity",
+      "./plugins/withIosSceneDelegate"
     ],
     "extra": {
       "eas": {

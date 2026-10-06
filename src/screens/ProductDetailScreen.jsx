@@ -45,10 +45,9 @@ export default function ProductDetailScreen({ route, navigation }) {
     });
     const [instructions, setInstructions] = useState('');
     const [quantity, setQuantity] = useState(1);
-    // A real quantity (0-2), not a choice between two named items — only rendered
-    // when the product actually offers it (cheese_slice_price is set).
-    const [cheeseSlices, setCheeseSlices] = useState(0);
-    const MAX_CHEESE_SLICES = 2;
+    // A Single-or-Double choice (like Half & Full), not a quantity — 'single' | 'double' | null.
+    // Only rendered for whichever price(s) the product actually sets.
+    const [cheeseSliceChoice, setCheeseSliceChoice] = useState(null);
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
 
     // Toast
@@ -235,7 +234,8 @@ export default function ProductDetailScreen({ route, navigation }) {
         selectedToppings.forEach(t => { total += Number(t.price || 0); });
         selectedDips.forEach(d => { total += Number(d.price || 0); });
         selectedAddons.forEach(a => { total += Number(a.price || 0); });
-        if (product.cheese_slice_price) total += cheeseSlices * Number(product.cheese_slice_price);
+        if (cheeseSliceChoice === 'single' && product.cheese_slice_single_price) total += Number(product.cheese_slice_single_price);
+        if (cheeseSliceChoice === 'double' && product.cheese_slice_double_price) total += Number(product.cheese_slice_double_price);
         return total * quantity;
     };
 
@@ -260,7 +260,7 @@ export default function ProductDetailScreen({ route, navigation }) {
     const handleAddToCart = () => {
         const sizeObj = sizes.find(s => s.key === selectedSize);
         if (!sizeObj) return;
-        addToCart(product, sizeObj, selectedCrust, selectedToppings, quantity, getTotalPrice(), selectedCheese, selectedDips, instructions, selectedAddons, selectedBase, cheeseSlices);
+        addToCart(product, sizeObj, selectedCrust, selectedToppings, quantity, getTotalPrice(), selectedCheese, selectedDips, instructions, selectedAddons, selectedBase, cheeseSliceChoice);
         selectedFeastCombos.forEach(combo => addFeastCombo(combo));
         showToast(`${quantity}x ${product.name} — ₹${getTotalPrice()}`);
     };
@@ -524,30 +524,43 @@ export default function ProductDetailScreen({ route, navigation }) {
                         </>
                     )}
 
-                    {/* ── Extra Cheese Slice — quantity, not a choice between named items ── */}
-                    {!!product.cheese_slice_price && (
+                    {/* ── Cheese Slice — Single-or-Double choice, like Cheese/Base above ── */}
+                    {(!!product.cheese_slice_single_price || !!product.cheese_slice_double_price) && (
                         <>
-                            <Text style={styles.optionTitle}>Extra Cheese Slice</Text>
-                            <View style={styles.cheeseSliceRow}>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.cheeseSliceLabel}>Cheese Slice</Text>
-                                    <Text style={styles.cheeseSlicePrice}>+₹{product.cheese_slice_price} each</Text>
-                                </View>
-                                <TouchableOpacity
-                                    style={styles.qtyBtn}
-                                    onPress={() => setCheeseSlices(n => Math.max(0, n - 1))}
-                                    disabled={cheeseSlices === 0}
-                                >
-                                    <Minus size={18} color={cheeseSlices === 0 ? '#e2e8f0' : '#94a3b8'} />
-                                </TouchableOpacity>
-                                <Text style={styles.cheeseSliceCount}>{cheeseSlices}</Text>
-                                <TouchableOpacity
-                                    style={styles.qtyBtn}
-                                    onPress={() => setCheeseSlices(n => Math.min(MAX_CHEESE_SLICES, n + 1))}
-                                    disabled={cheeseSlices === MAX_CHEESE_SLICES}
-                                >
-                                    <Plus size={18} color={cheeseSlices === MAX_CHEESE_SLICES ? '#e2e8f0' : '#94a3b8'} />
-                                </TouchableOpacity>
+                            <Text style={styles.optionTitle}>Cheese Slice</Text>
+                            <View style={styles.toppingList}>
+                                {!!product.cheese_slice_single_price && (
+                                    <TouchableOpacity
+                                        style={[styles.toppingRow, cheeseSliceChoice === 'single' && styles.cheeseRowActive]}
+                                        onPress={() => setCheeseSliceChoice(c => c === 'single' ? null : 'single')}
+                                        activeOpacity={0.7}>
+                                        <Text style={[styles.toppingName, cheeseSliceChoice === 'single' && { color: '#92400e' }]}>
+                                            Single Cheese Slice
+                                        </Text>
+                                        <Text style={[styles.toppingPrice, cheeseSliceChoice === 'single' && { color: '#92400e' }]}>
+                                            +₹{product.cheese_slice_single_price}
+                                        </Text>
+                                        <View style={[styles.radioOuter, cheeseSliceChoice === 'single' && styles.radioOuterActive]}>
+                                            {cheeseSliceChoice === 'single' && <View style={styles.radioInner} />}
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+                                {!!product.cheese_slice_double_price && (
+                                    <TouchableOpacity
+                                        style={[styles.toppingRow, cheeseSliceChoice === 'double' && styles.cheeseRowActive]}
+                                        onPress={() => setCheeseSliceChoice(c => c === 'double' ? null : 'double')}
+                                        activeOpacity={0.7}>
+                                        <Text style={[styles.toppingName, cheeseSliceChoice === 'double' && { color: '#92400e' }]}>
+                                            Double Cheese Slice
+                                        </Text>
+                                        <Text style={[styles.toppingPrice, cheeseSliceChoice === 'double' && { color: '#92400e' }]}>
+                                            +₹{product.cheese_slice_double_price}
+                                        </Text>
+                                        <View style={[styles.radioOuter, cheeseSliceChoice === 'double' && styles.radioOuterActive]}>
+                                            {cheeseSliceChoice === 'double' && <View style={styles.radioInner} />}
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         </>
                     )}
@@ -698,15 +711,6 @@ const styles = StyleSheet.create({
     toppingRowActive: { backgroundColor: '#f0fdf4', borderColor: '#48d23c' },
     dipRowActive: { backgroundColor: '#eff6ff', borderColor: '#3b82f6' },
     dipImage: { width: 28, height: 28, borderRadius: 8, marginRight: 10 },
-    cheeseSliceRow: {
-        flexDirection: 'row', alignItems: 'center', gap: 10,
-        backgroundColor: '#f8fafc', borderRadius: 16,
-        paddingHorizontal: 16, paddingVertical: 14,
-        borderWidth: 1.5, borderColor: 'transparent',
-    },
-    cheeseSliceLabel: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
-    cheeseSlicePrice: { fontSize: 12, color: '#64748b', marginTop: 2 },
-    cheeseSliceCount: { fontSize: 17, fontWeight: '900', color: '#0f172a', minWidth: 22, textAlign: 'center' },
     cheeseRowActive: { backgroundColor: '#fffbeb', borderColor: '#d97706' },
     baseRowActive: { backgroundColor: '#f0fdfa', borderColor: '#0f766e' },
     baseRadioActive: { borderColor: '#0f766e' },

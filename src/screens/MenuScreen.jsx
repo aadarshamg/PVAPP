@@ -73,6 +73,14 @@ export default function MenuScreen({ navigation, route }) {
         }).filter(s => s.items.length > 0);
     }, [categories, products, query, diet]);
 
+    // Default the first section as active immediately on load/filter change, rather than
+    // leaving every chip unhighlighted until the user's first scroll event.
+    useEffect(() => {
+        if (!sections.length) { setActiveSectionId(null); return; }
+        if (!sections.some(s => s.id === activeSectionId)) setActiveSectionId(sections[0].id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sections]);
+
     const totalItems = sections.reduce((n, s) => n + s.items.length, 0);
     const filtersOn = !!query.trim() || !!diet;
     const clearFilters = () => { setQuery(''); setDiet(null); };

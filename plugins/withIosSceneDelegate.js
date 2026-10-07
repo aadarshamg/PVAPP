@@ -1,4 +1,5 @@
-const { withBuildSourceFile, withInfoPlist } = require('expo/config-plugins');
+const fs = require('fs');
+const { withXcodeProject, withInfoPlist, IOSConfig } = require('expo/config-plugins');
 
 const SCENE_DELEGATE_CLASS_NAME = 'SceneDelegate';
 const SCENE_DELEGATE_FILE_NAME = `${SCENE_DELEGATE_CLASS_NAME}.swift`;
@@ -35,10 +36,26 @@ class ${SCENE_DELEGATE_CLASS_NAME}: UIResponder, UIWindowSceneDelegate {
 `;
 
 function withIosSceneDelegate(config) {
-    config = withBuildSourceFile(config, {
-        filePath: SCENE_DELEGATE_FILE_NAME,
-        contents: SCENE_DELEGATE_SOURCE,
-        overwrite: true,
+    config = withXcodeProject(config, (config) => {
+        // ios/ only exists after a real iOS prebuild (on a Mac). On platforms where iOS
+        // native generation never runs — this project's Windows dev machine, or an
+        // Android-only EAS build that still resolves the full cross-platform config —
+        // platformProjectRoot won't exist on disk yet. createBuildSourceFile does a
+        // direct, unconditional fs.writeFileSync with no such guard, which crashes
+        // `expo config`/`eas build` for an unrelated platform. Skip gracefully instead;
+        // this has no effect on the real iOS prebuild, where the directory does exist.
+        if (!fs.existsSync(config.modRequest.platformProjectRoot)) {
+            return config;
+        }
+        const projectName = IOSConfig.XcodeUtils.getProjectName(config.modRequest.projectRoot);
+        config.modResults = IOSConfig.XcodeProjectFile.createBuildSourceFile({
+            project: config.modResults,
+            nativeProjectRoot: config.modRequest.platformProjectRoot,
+            filePath: `${projectName}/${SCENE_DELEGATE_FILE_NAME}`,
+            fileContents: SCENE_DELEGATE_SOURCE,
+            overwrite: true,
+        });
+        return config;
     });
 
     config = withInfoPlist(config, (config) => {

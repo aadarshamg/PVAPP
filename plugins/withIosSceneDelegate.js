@@ -27,7 +27,13 @@ class ${SCENE_DELEGATE_CLASS_NAME}: UIResponder, UIWindowSceneDelegate {
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
-        if let window = UIApplication.shared.delegate?.window {
+        // UIApplicationDelegate.window is an @objc optional requirement whose own declared
+        // type is already UIWindow? — accessing it through the protocol therefore yields
+        // UIWindow?? (double-optional), which plain ?. chaining does not flatten the way it
+        // does for a normal optional property. "?? nil" is the standard Swift idiom to
+        // flatten that extra layer; without it, "if let" only unwraps one level and the
+        // compiler rejects window.windowScene below ("must be unwrapped").
+        if let window = UIApplication.shared.delegate?.window ?? nil {
             window.windowScene = windowScene
             self.window = window
         }

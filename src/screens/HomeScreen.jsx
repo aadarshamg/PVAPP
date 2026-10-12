@@ -313,8 +313,13 @@ export default function HomeScreen({ navigation }) {
                 // Banners are a shared, brand-wide marketing asset — not scoped per store.
                 supabase.from('banners').select('*').eq('is_active', true).order('sort_order', { ascending: true }),
             ]);
-            if (catRes.data) setCategories(catRes.data);
-            if (featRes.data) setFeatured(featRes.data);
+            // Categories the admin switched off are hidden, along with their products.
+            // Filtered in code rather than in the query so this still works before the
+            // is_active column exists.
+            const hiddenCats = new Set((catRes.data || []).filter(c => c.is_active === false).map(c => c.id));
+            const shown = (list) => list.filter(p => !hiddenCats.has(p.category_id));
+            if (catRes.data) setCategories(catRes.data.filter(c => c.is_active !== false));
+            if (featRes.data) setFeatured(shown(featRes.data));
             if (bannersRes.data) setBanners(bannersRes.data);
 
             let popData = [];
@@ -324,12 +329,12 @@ export default function HomeScreen({ navigation }) {
                 const topIds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]).slice(0, 6);
                 if (topIds.length > 0) {
                     const { data } = await supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).in('id', topIds).eq('is_available', true);
-                    if (data) popData = data.sort((a, b) => counts[b.id] - counts[a.id]);
+                    if (data) popData = shown(data).sort((a, b) => counts[b.id] - counts[a.id]);
                 }
             }
             if (popData.length === 0) {
-                const { data } = await supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).eq('is_available', true).order('created_at', { ascending: false }).limit(6);
-                if (data) popData = data;
+                const { data } = await supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).eq('is_available', true).order('created_at', { ascending: false }).limit(12);
+                if (data) popData = shown(data).slice(0, 6);
             }
             setPopular(popData);
         } catch { /* silent */ }

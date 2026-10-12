@@ -53,7 +53,10 @@ export default function MenuScreen({ navigation, route }) {
             supabase.from('products').select('*').eq('store_id', selectedStore.id).eq('is_available', true).order('created_at', { ascending: true }),
         ]).then(([catRes, prodRes]) => {
             if (catRes.error || prodRes.error) throw catRes.error || prodRes.error;
-            setCategories(catRes.data || []);
+            // A category the admin switched off is dropped here, which also hides its
+            // products since sections are built per category. Filtered in code rather
+            // than in the query so this still works before the is_active column exists.
+            setCategories((catRes.data || []).filter(c => c.is_active !== false));
             setProducts(prodRes.data || []);
         }).catch(() => setError('Could not load the menu. Check your connection and try again.'))
             .finally(() => setLoading(false));

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -25,6 +25,8 @@ const Stack = createNativeStackNavigator();
 
 import { Home, ClipboardList, ShoppingCart, User } from 'lucide-react-native';
 import { useCart } from '../contexts/CartContext';
+import { useStore } from '../contexts/StoreContext';
+import { checkDeliveryZone } from '../utils/deliveryZone';
 
 function TabIcon({ label, focused }) {
     const { cartCount } = useCart();
@@ -56,8 +58,22 @@ function TabIcon({ label, focused }) {
     );
 }
 
-function HomeTabs() {
+function HomeTabs({ navigation }) {
     const insets = useSafeAreaInsets();
+    const { selectedStore } = useStore();
+
+    // The delivery-area check (permission, zone fetch, GPS fix) runs behind the app
+    // instead of blocking it. It lets the customer through on every outcome except
+    // "outside", so that is the only result worth interrupting for.
+    useEffect(() => {
+        if (!selectedStore?.id) return;
+        let cancelled = false;
+        checkDeliveryZone(selectedStore.id).then((result) => {
+            if (!cancelled && result === 'outside') navigation.navigate('ZoneCheck');
+        });
+        return () => { cancelled = true; };
+    }, [selectedStore?.id, navigation]);
+
     return (
         <Tab.Navigator
             screenOptions={({ route }) => ({

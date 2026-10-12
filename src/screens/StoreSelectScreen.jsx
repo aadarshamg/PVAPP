@@ -15,7 +15,7 @@ export default function StoreSelectScreen({ navigation }) {
     useEffect(() => {
         if (loading) return;
         if (selectedStore) {
-            navigation.replace('ZoneCheck');
+            navigation.replace('MainTabs');
             return;
         }
         // Only one active store right now (Deep Nagar not yet launched) — skip the
@@ -23,7 +23,7 @@ export default function StoreSelectScreen({ navigation }) {
         // second store goes active this stops matching and the real picker returns
         // automatically, with no further code changes needed.
         if (stores.length === 1) {
-            setSelectedStore(stores[0]).then(() => navigation.replace('ZoneCheck'));
+            setSelectedStore(stores[0]).then(() => navigation.replace('MainTabs'));
         }
     }, [loading, selectedStore, stores, navigation, setSelectedStore]);
 
@@ -42,7 +42,7 @@ export default function StoreSelectScreen({ navigation }) {
         // store was previously selected and would otherwise wrongly skip the check here.
         await AsyncStorage.removeItem('@zone_check_cache');
         await setSelectedStore(store);
-        navigation.replace('ZoneCheck');
+        navigation.replace('MainTabs');
     };
 
     if (loading || selectedStore || stores.length === 1) {

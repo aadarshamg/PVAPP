@@ -1,115 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
     TextInput, KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { isPointInPolygon } from 'geolib';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MapPin, ArrowRight, User, Phone } from 'lucide-react-native';
-import * as Location from 'expo-location';
-import { supabase } from '../lib/supabase';
 import { useStore } from '../contexts/StoreContext';
-import { withTimeout } from '../utils/withTimeout';
-
-const STORAGE_TIMEOUT_MS = 5000;         // plain device storage — should be near-instant
-const PERMISSION_TIMEOUT_MS = 60000;     // a native OS dialog needs human reaction time (1 min)
-const FETCH_TIMEOUT_MS = 10000;          // plain network round-trip
+import { checkDeliveryZone } from '../utils/deliveryZone';
 
 // Step states
 const STEP_CHECKING = 'checking';
 const STEP_OUTSIDE  = 'outside';
 const STEP_RECEIVER = 'receiver';
 
+// Opened over the app only after the background check (AppNavigator) has already found
+// the customer outside the zone, so it starts on the "outside" step. The checking step
+// is only shown for an explicit "Try Again".
 export default function DeliveryZoneCheckScreen({ navigation }) {
     const { selectedStore } = useStore();
-    const [step, setStep] = useState(STEP_CHECKING);
+    const [step, setStep] = useState(STEP_OUTSIDE);
     const [receiverName, setReceiverName] = useState('');
     const [receiverPhone, setReceiverPhone] = useState('');
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        checkZone();
-    }, []);
-
+    // Going back (rather than opening a new MainTabs) keeps the app that is already
+    // loaded underneath, and does not start another background check.
     const proceedToApp = () => {
-        navigation.replace('MainTabs');
+        if (navigation.canGoBack()) navigation.goBack();
+        else navigation.replace('MainTabs');
     };
 
     const checkZone = async () => {
         setStep(STEP_CHECKING);
-        try {
-            // Only cache "inside" results (3-min TTL) — never cache "outside"
-            // because admin may update the zone at any time
-            const cached = await withTimeout(
-                AsyncStorage.getItem('@zone_check_cache'),
-                STORAGE_TIMEOUT_MS,
-                'zone_cache_get_timeout'
-            );
-            if (cached) {
-                const { result, ts } = JSON.parse(cached);
-                if (result === 'inside' && Date.now() - ts < 3 * 60 * 1000) {
-                    proceedToApp();
-                    return;
-                }
-            }
-            // Clear any stale cache before fresh check
-            await withTimeout(
-                AsyncStorage.removeItem('@zone_check_cache'),
-                STORAGE_TIMEOUT_MS,
-                'zone_cache_remove_timeout'
-            );
-
-            // Request GPS permission — a native OS dialog that only ever appears the
-            // very first time (later launches resolve instantly with no dialog at all,
-            // which is why a hang here specifically only shows up on a first attempt).
-            const { status } = await withTimeout(
-                Location.requestForegroundPermissionsAsync(),
-                PERMISSION_TIMEOUT_MS,
-                'location_permission_timeout'
-            );
-            if (status !== 'granted') { proceedToApp(); return; }
-
-            // Fetch this store's delivery zone (each store draws its own polygon)
-            if (!selectedStore?.id) { proceedToApp(); return; }
-            const { data } = await withTimeout(
-                supabase.from('stores').select('delivery_zone').eq('id', selectedStore.id).single(),
-                FETCH_TIMEOUT_MS,
-                'delivery_zone_fetch_timeout'
-            );
-
-            if (!data?.delivery_zone) { proceedToApp(); return; }
-
-            const zone = data.delivery_zone.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
-            if (zone.length < 3) { proceedToApp(); return; }
-
-            // Always get a fresh GPS position — never use last-known (can be hours old)
-            const pos = await withTimeout(
-                Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-                12000,
-                'gps_timeout'
-            );
-            const coord = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-            const inside = isPointInPolygon(coord, zone);
-
-            if (inside) {
-                // Cache "inside" for 3 minutes to avoid GPS on every open
-                await withTimeout(
-                    AsyncStorage.setItem('@zone_check_cache', JSON.stringify({
-                        result: 'inside',
-                        ts: Date.now(),
-                    })),
-                    STORAGE_TIMEOUT_MS,
-                    'zone_cache_set_timeout'
-                );
-                proceedToApp();
-            } else {
-                setStep(STEP_OUTSIDE);
-            }
-        } catch {
-            // GPS timeout, permission denied, offline — allow access
-            proceedToApp();
-        }
+        const result = await checkDeliveryZone(selectedStore?.id);
+        if (result === 'outside') setStep(STEP_OUTSIDE);
+        else proceedToApp();
     };
 
     const handleContinueWithReceiver = async () => {

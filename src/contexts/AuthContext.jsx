@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { makeRedirectUri } from 'expo-auth-session';
@@ -285,7 +285,31 @@ export const AuthProvider = ({ children }) => {
     // function independently re-verifies the caller's token, so it can only ever delete
     // the account making the request. Past orders survive (anonymized), only the
     // account/profile/saved-on-device data goes away.
-    const deleteAccount = async () => {
+    const deleteInFlight = useRef(null);
+
+    // The server-side session is already gone in every case this is used, so there is
+    // nothing to revoke remotely: a local-only sign-out needs no network round trip.
+    const clearLocalSession = async () => {
+        setRecoveryMode(false);
+        try {
+            await withTimeout(supabase.auth.signOut({ scope: 'local' }), AUTH_TIMEOUT_MS, 'local_signout_timeout');
+        } catch {
+            // Fall through: the state reset below still returns the app to the login flow.
+        }
+        setSession(null);
+        setUser(null);
+    };
+
+    // A second call while one is running would reach the server after the first has
+    // already deleted the user, and come back as a confusing "session_not_found" error.
+    const deleteAccount = () => {
+        if (!deleteInFlight.current) {
+            deleteInFlight.current = runDeleteAccount().finally(() => { deleteInFlight.current = null; });
+        }
+        return deleteInFlight.current;
+    };
+
+    const runDeleteAccount = async () => {
         const { data: { session: currentSession } } = await withTimeout(
             supabase.auth.getSession(),
             AUTH_TIMEOUT_MS,
@@ -301,15 +325,23 @@ export const AuthProvider = ({ children }) => {
             'Deleting your account is taking too long. Check your internet connection and try again.'
         );
         if (error) throw error;
-        if (!data?.success) throw new Error(data?.error || 'Failed to delete account.');
+        if (!data?.success) {
+            const reason = data?.error || '';
+            // The account no longer exists on the server, so the deletion is already done.
+            if (reason.includes('user_not_found')) {
+                await clearLocalSession();
+                return;
+            }
+            // This phone was holding a login the server had already ended (deleted or
+            // signed out elsewhere). The app only looked signed in, so sign out for real.
+            if (reason.includes('session_not_found')) {
+                await clearLocalSession();
+                throw new Error('Your login had already ended, so you have been signed out. If your account still exists, sign in again and delete it from Profile.');
+            }
+            throw new Error(reason || 'Failed to delete account.');
+        }
 
-        // The auth user is gone server-side — clear the local session too.
-        setRecoveryMode(false);
-        await withTimeout(
-            supabase.auth.signOut(),
-            AUTH_TIMEOUT_MS,
-            'Account deleted, but sign-out is taking too long. Please restart the app.'
-        );
+        await clearLocalSession();
     };
 
     // Send a password-reset email that deep-links back into the app

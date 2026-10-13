@@ -40,6 +40,7 @@ export const StoreProvider = ({ children }) => {
             // Reading the remembered store is best-effort and separate from the fetch
             // above: a hang or failure here shouldn't turn a successful store-list load
             // into an error state — it just means falling through to the picker/auto-skip.
+            let match = null;
             try {
                 const saved = await withTimeout(
                     AsyncStorage.getItem(STORAGE_KEY),
@@ -48,12 +49,19 @@ export const StoreProvider = ({ children }) => {
                 );
                 if (saved) {
                     const { id } = JSON.parse(saved);
-                    const match = list.find(s => s.id === id);
-                    if (match) setSelectedStoreState(match);
+                    match = list.find(s => s.id === id) || null;
                 }
             } catch {
                 // Non-fatal — proceed without a remembered store.
             }
+            // With a single active store there is nothing to pick, so it is selected here,
+            // before any screen mounts. AppNavigator can then open straight on the tabs
+            // instead of passing through StoreSelect and navigating away from it.
+            if (!match && list.length === 1) {
+                match = list[0];
+                AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ id: match.id })).catch(() => {});
+            }
+            if (match) setSelectedStoreState(match);
         } catch (err) {
             // Timed out, offline, or a real Supabase error — surface the actual message
             // (rather than swallowing it) so the empty state can show what really went

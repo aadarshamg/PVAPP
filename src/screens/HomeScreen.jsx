@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     FlatList, ActivityIndicator, SafeAreaView,
-    StatusBar, Dimensions, Platform, Animated, Modal
+    StatusBar, Dimensions, Platform, Animated
 } from 'react-native';
 import { Image } from 'expo-image';
 
@@ -10,6 +10,7 @@ const LOGO = require('../../assets/images/logo.png');
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/withTimeout';
 import {
     ShoppingCart, MapPin, Package, AlertCircle,
     Pizza, Leaf, Drumstick, Crown, CupSoda, Star, ChevronRight
@@ -304,7 +305,8 @@ export default function HomeScreen({ navigation }) {
         if (!selectedStore?.id) return;
         setLoading(true);
         try {
-            const [catRes, featRes, orderItemsRes, bannersRes] = await Promise.all([
+            // Bounded so a stalled request can never leave the splash up forever.
+            const [catRes, featRes, orderItemsRes, bannersRes] = await withTimeout(Promise.all([
                 supabase.from('categories').select('*').eq('store_id', selectedStore.id).order('sort_order', { ascending: true }),
                 supabase.from('products').select('*, category:categories(name)').eq('store_id', selectedStore.id).eq('is_featured', true).eq('is_available', true).limit(8),
                 // order_items has no store_id of its own — harmless to leave business-wide, since the
@@ -312,7 +314,9 @@ export default function HomeScreen({ navigation }) {
                 supabase.from('order_items').select('product_id, quantity').order('created_at', { ascending: false }).limit(500),
                 // Banners are a shared, brand-wide marketing asset — not scoped per store.
                 supabase.from('banners').select('*').eq('is_active', true).order('sort_order', { ascending: true }),
-            ]);
+            ]), 15000, 'home_fetch_timeout');
+            // The sections below are extras; show the screen now rather than wait on them.
+            setLoading(false);
             // Categories the admin switched off are hidden, along with their products.
             // Filtered in code rather than in the query so this still works before the
             // is_active column exists.
@@ -576,10 +580,18 @@ export default function HomeScreen({ navigation }) {
 
             </ScrollView>
 
-            {/* ── Full-screen loading splash (covers tab bar via Modal) ── */}
-            <Modal visible={loading} transparent={false} statusBarTranslucent animationType="none">
-                <AppLoadingScreen />
-            </Modal>
+            {/* ── Loading splash ──
+                A plain overlay, not a native Modal. A Modal presented the moment this
+                screen mounts collides with whatever iOS is already presenting or
+                dismissing right after a login (the sign-in browser sheet, the location
+                permission alert, the stack transition), and when the data arrives before
+                the presentation finishes the dismissal is dropped: the splash then stays
+                up for good, until the app is force-closed. */}
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <AppLoadingScreen />
+                </View>
+            )}
 
 
             {/* ── Active order banner ── */}
@@ -628,6 +640,7 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F0F0F5' },
     loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    loadingOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 100, elevation: 100 },
 
     // ── Header ──
     header: {

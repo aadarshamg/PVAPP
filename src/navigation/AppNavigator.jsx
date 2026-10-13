@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -95,8 +95,26 @@ function HomeTabs({ navigation }) {
 }
 
 export default function AppNavigator() {
+    const { selectedStore, loading } = useStore();
+    const initialRoute = useRef(null);
+
+    // The first screen is decided once, before the stack mounts. Mounting StoreSelect
+    // and replacing it from its own mount effect is what a fresh login did (the store
+    // list is already loaded by then), while a reopened app replaced it later, after
+    // the list arrived. Only the fresh-login path ever got stuck on that spinner.
+    if (!initialRoute.current) {
+        if (loading) {
+            return (
+                <View style={styles.bootScreen}>
+                    <ActivityIndicator size="large" color="#22973a" />
+                </View>
+            );
+        }
+        initialRoute.current = selectedStore ? 'MainTabs' : 'StoreSelect';
+    }
+
     return (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName={initialRoute.current} screenOptions={{ headerShown: false }}>
             <Stack.Screen name="StoreSelect" component={StoreSelectScreen} />
             <Stack.Screen name="ZoneCheck" component={DeliveryZoneCheckScreen} />
             <Stack.Screen name="MainTabs" component={HomeTabs} />
@@ -118,6 +136,7 @@ export default function AppNavigator() {
 }
 
 const styles = StyleSheet.create({
+    bootScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
     tabBar: {
         height: 70,
         backgroundColor: '#fff',
